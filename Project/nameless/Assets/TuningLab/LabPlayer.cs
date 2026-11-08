@@ -536,7 +536,10 @@ public class LabPlayer : MonoBehaviour
         }
 
         // 跳跃脱离。
-        if (jumpDownThisFrame && climbing != null)
+        // 用 jumpBuffer 而不是 jumpDownThisFrame：后者是 Update 里置位、FixedUpdate 里读，
+        // 两者执行顺序不保证每帧都是 Update 先跑，按帧标志判会漏输入（这就是原来跳不掉的原因）。
+        // jumpBuffer 在 Update 里写入、FixedUpdate 里消费，天然跨帧。
+        if (climbing != null && (jumpBuffer > 0f || (lab.holdToJump && jumpHeld)))
         {
             EndClimb(ref v);
             v.y = lab.JumpVelocity;
@@ -561,28 +564,112 @@ public class LabPlayer : MonoBehaviour
             dashTimer = 0f;
         }
 
-        // 已经贴着但被挤开了（例如方块移动）就结束。
+        // 手上这根可能已经不在玩家身边了（人爬过了它那一格）——
+        // 先在同侧的相邻格里找一根接得上的，找不到才结束攀爬。
         Bounds body = col.bounds;
+        var current = RefreshClimbBlock(body);
+        if (current == null)
+        {
+            EndClimb(ref v);
+            return false;
+        }
+        climbing = current;
+
+        // 横向贴面。
+        //
+        // 之前这里是 `v.x = 0f` + 硬写 rb.position，等于每帧把人钉死在墙面上，
+        // 结果 A 踩头、撞过来都推不动（Issue #126 bug 1）。
+        //
+        // 现在把"横向被外力推开"当成脱离条件：位置每帧朝墙面收，但如果人已经被
+        // 推离墙面超过一个容差，就说明是被顶开了 —— 直接脱离攀爬，让物理接管。
         Bounds target = climbing.Bounds;
-        bool stillBeside = Mathf.Abs(body.center.y - target.center.y) <= target.extents.y + body.extents.y
-                           && Mathf.Abs(body.center.x - target.center.x) <= target.extents.x + body.extents.x + 0.35f;
-        if (!stillBeside)
+        float faceX = climbSide > 0f
+            ? target.max.x + body.extents.x
+            : target.min.x - body.extents.x;
+
+        // 横向速度被人推动（双人碰撞会直接改 linearVelocity）：立刻交出控制权。
+        // 攀爬态自己会把 v.x 往 0 收，不先判这一下的话推力下一帧就被抹掉了。
+        float incomingX = rb.linearVelocity.x;
+        if (Mathf.Abs(incomingX) > ClimbBreakSpeed)
+        {
+            EndClimb(ref v);
+            v.x = incomingX;
+            return false;
+        }
+
+        float drift = Mathf.Abs(rb.position.x - faceX);
+        if (drift > ClimbBreakDistance)
         {
             EndClimb(ref v);
             return false;
         }
 
-        // 横向锁死：把玩家按在攀附的那一面上。
-        float faceX = climbSide > 0f
-            ? target.max.x + body.extents.x
-            : target.min.x - body.extents.x;
-        v.x = 0f;
-        rb.position = new Vector2(faceX, rb.position.y);
+        // 贴面：
+        //   没被外力推 → 速度归零、位置贴面（维持攀爬手感）
+        //   位置已经被物理推离墙面 → 不再往回拉，而是让物理继续跑，
+        //   下一帧漂移超限就自然脱离攀爬。这样 A 才推得动 B。
+        if (drift < 0.02f)
+        {
+            v.x = Mathf.MoveTowards(v.x, 0f, lab.groundBrake * dt);
+            rb.position = new Vector2(
+                Mathf.MoveTowards(rb.position.x, faceX, 6f * dt),
+                rb.position.y);
+        }
 
         // 竖直：WS 以走路速度上下爬，不受重力。
         v.y = vertInput * lab.walkSpeed;
         rb.gravityScale = 0f;
         return true;
+    }
+
+    /// <summary>
+    /// 找玩家当前该贴的那根光桥。
+    ///
+    /// 优先用手上这根（还挨着就继续用）；否则在同侧、竖直方向相邻的光桥里找一根，
+    /// 这样沿着一串相邻的竖直光桥能连续爬，不会爬过一格就断。
+    /// 返回 null 表示附近没有可攀的东西。
+    /// </summary>
+    LabLightBridgeBlock RefreshClimbBlock(Bounds body)
+    {
+        const float sideReach = 0.35f;
+
+        if (climbing != null && IsBeside(body, climbing.Bounds, sideReach)) return climbing;
+
+        // 同侧另一根：用"竖直方向邻接"判定，容差取一个格子的高度。
+        for (int i = 0; i < LabLightBridgeBlock.All.Count; i++)
+        {
+            var block = LabLightBridgeBlock.All[i];
+            if (block == null || !block.Vertical) continue;
+            if (block == climbing) continue;
+            if (IsBeside(body, block.Bounds, sideReach)) return block;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 攀爬时被外力推离墙面多远就算"被顶开"。
+    /// 取玩家半宽的 1/3 左右：足够容忍碰撞解算的抖动，又能在真被撞时及时脱开。
+    /// </summary>
+    float ClimbBreakDistance => Mathf.Max(0.12f, HalfHeight * 0.45f);
+
+    /// <summary>
+    /// 横向速度超过这个值就算"被人撞了"，脱离攀爬。
+    /// 走路速度是 8，用一半做阈值，避免自己按 AD 也误判（AD 在攀爬里不产生速度）。
+    /// </summary>
+    float ClimbBreakSpeed => Mathf.Max(2f, lab != null ? lab.walkSpeed * 0.5f : 2f);
+
+    /// <summary>玩家是不是贴在这块光桥的攀附侧上（竖直方向要有重叠）。</summary>
+    bool IsBeside(Bounds body, Bounds target, float sideReach)
+    {
+        // 竖直：碰撞箱要挨着或重叠，不能中间空一格。
+        bool vertical = body.min.y <= target.max.y && body.max.y >= target.min.y;
+        if (!vertical) return false;
+
+        // 横向：按攀附方向判，且允许一点容差。
+        if (climbSide > 0f)
+            return body.min.x >= target.max.x - 0.1f && body.min.x <= target.max.x + sideReach;
+
+        return body.max.x <= target.min.x + 0.1f && body.max.x >= target.min.x - sideReach;
     }
 
     /// <summary>找一根可以攀附的竖直光桥。返回 null 表示旁边没有。</summary>

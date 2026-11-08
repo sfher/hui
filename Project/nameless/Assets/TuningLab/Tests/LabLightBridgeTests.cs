@@ -562,6 +562,125 @@ public sealed class LabLightBridgeTests
         Assert.IsFalse(b.Climbing, "光桥没了就不该还挂在空中");
     }
 
+    // 攀爬的三个 bug（Issue #126）------------------------------------
+
+    /// <summary>bug 2：攀爬时按跳跃要能脱离。</summary>
+    [UnityTest]
+    public IEnumerator JumpReleasesClimbBug126()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var block = phantom.Bridge[0];
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 6; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住，否则测不到脱离");
+
+        // 跳跃：注入后给一帧 Update 走 ReadInput → jumpBuffer，再让 FixedUpdate 消费。
+        b.InjectInput(-1f, 0f, jumpPressed: true);
+        yield return null;
+        yield return new WaitForFixedUpdate();
+
+        Assert.IsFalse(b.Climbing, "按跳跃必须脱离攀附（bug 2）");
+    }
+
+    /// <summary>bug 3：沿一串相邻的竖直光桥能连续往上爬，不会中途掉。</summary>
+    [UnityTest]
+    public IEnumerator ClimbAcrossAdjacentBridgesBug126()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var blocks = phantom.Bridge;
+        Assert.Greater(blocks.Count, 2, "竖直光桥要铺出好几格，才测得到跨格");
+
+        // 从最下面那格开始挂。
+        var start = blocks[0];
+        b.Teleport(new Vector2(start.Bounds.max.x + b.HalfHeight + 0.1f, start.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 6; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住");
+
+        float startY = b.FootY;
+        // 一路往上爬足够久，跨过好几格。
+        for (int i = 0; i < 90; i++)
+        {
+            b.InjectInput(-1f, 1f);
+            yield return new WaitForFixedUpdate();
+        }
+
+        Assert.IsTrue(b.Climbing, "沿相邻光桥往上爬不该中途脱落（bug 3）");
+        Assert.Greater(b.FootY, startY + 1.5f, "要真的爬上去一格以上，实际 " + (b.FootY - startY).ToString("0.00"));
+    }
+
+    /// <summary>bug 1：攀爬中的 B 能被 A 推开，不能纹丝不动。</summary>
+    [UnityTest]
+    public IEnumerator ClimbingPlayerCanBePushedBug126()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var a = phantom.Source;
+        var block = phantom.Bridge[0];
+
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 6; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住");
+
+        float beforeX = b.transform.position.x;
+
+        // A 从右侧冲过来撞 B。
+        // 注意要持续注入左推输入：只 SetVelocity 一次的话，下一帧 FixedUpdate
+        // 就会把速度拉回 0（没有输入时地面制动生效），A 走不到 B 身边。
+        // 另外位置要按 B 的**当前**位置取，B 攀爬时会沿桥面移动，不能沿用挂上去之前的坐标。
+        // 给 A 铺一条地板，人站着撞才测得准：
+        // 玩家 FixedUpdate 每帧都会把 gravityScale 重置回配置值，测试里手动关重力无效。
+        var bPos = b.transform.position;
+        int floorY = Mathf.FloorToInt(bPos.y - b.HalfHeight - 1f);
+        for (int x = -3; x <= 4; x++)
+            MakeSolid(new Vector2Int(x, floorY));
+        yield return new WaitForFixedUpdate();
+
+        // 落到地板上站稳，再横向撞过去。
+        a.Teleport(new Vector2(bPos.x + 1.6f, floorY + 1f + a.HalfHeight));
+        for (int i = 0; i < 12; i++)
+        {
+            a.InjectInput(0f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+
+        // 站住之后，持续向左推着撞 B。
+        for (int i = 0; i < 30; i++)
+        {
+            a.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+
+        float moved = Mathf.Abs(b.transform.position.x - beforeX);
+        Assert.Greater(moved, 0.02f,
+            "攀爬中的 B 应该被推动，实际位移 " + moved.ToString("0.000") + "（bug 1）");
+    }
+
     /// <summary>竖直光桥压过一格红块也能生成（只穿一格，不往后延续）。</summary>
     [UnityTest]
     public IEnumerator VerticalBridgePassesOneSolidCell()
@@ -669,6 +788,16 @@ public sealed class LabLightBridgeTests
             if (phantom.Bridge[i] != null && phantom.Bridge[i].Cell == cell)
                 return phantom.Bridge[i];
         return null;
+    }
+
+    void MakeSolid(Vector2Int cell)
+    {
+        var go = new GameObject("Solid");
+        go.transform.SetParent(root.transform, false);
+        go.transform.position = new Vector3(cell.x + 0.5f, cell.y + 0.5f, 0f);
+        var bc = go.AddComponent<BoxCollider2D>();
+        bc.size = Vector2.one;
+        bc.sharedMaterial = slick;
     }
 
     void MakeWall(Vector2Int cell)
