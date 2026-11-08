@@ -191,6 +191,18 @@ public class TuningLab : MonoBehaviour
     public LabHud Hud { get; private set; }
     public LabAudio Sound { get; private set; }
     public LabSettingsUI SettingsUI { get; private set; }
+
+    /// <summary>
+    /// 当前生效的按键绑定。默认是 Issue #94 定案的两套；设置界面改完之后
+    /// 通过 <see cref="ApplyBindings"/> 整体换掉，玩家每帧从表里读，不需要额外通知。
+    /// </summary>
+    public LabBindings Bindings { get; private set; } = new LabBindings();
+
+    /// <summary>换一套按键绑定。传 null 表示回到默认。</summary>
+    public void ApplyBindings(LabBindings bindings)
+    {
+        Bindings = bindings != null ? bindings.Clone() : new LabBindings();
+    }
     public LabRespawnPoint ActiveRespawnPoint { get; private set; }
 
     /// <summary>设置界面打开时所有玩法冻结；关闭后恢复暂停前的 timeScale。</summary>

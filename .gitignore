@@ -89,3 +89,7 @@ Project/nameless/Assets/Scenes/Levels/__VerifyLevel.unity*
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+# 视觉工具缓存（本地临时产物，不提交）
+.dsh-vision-toolkit/
+.WorkBuddy-vision-toolkit/

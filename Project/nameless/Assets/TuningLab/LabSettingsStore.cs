@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 /// <summary>只包含可持久字段的设置 DTO；不序列化任何 GameObject 或场景对象。</summary>
 [Serializable]
@@ -16,6 +17,8 @@ public sealed class LabSettingsData
     public int screenHeight;
     /// <summary>亮度预留位：当前只存取，不参与渲染。</summary>
     public float brightness = 1f;
+    /// <summary>两个玩家各自的按键绑定（Issue #94）。</summary>
+    public LabBindings bindings = new LabBindings();
 }
 
 /// <summary>
@@ -28,7 +31,7 @@ public sealed class LabSettingsData
 /// </summary>
 public static class LabSettingsStore
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     const string FileName = "settings.json";
     const string BackupFileName = "settings.backup.json";
     const string TempFileName = "settings.tmp";
@@ -96,7 +99,7 @@ public static class LabSettingsStore
         try
         {
             Directory.CreateDirectory(DataDirectory);
-            File.WriteAllText(TempPath, JsonUtility.ToJson(data, true));
+            File.WriteAllText(TempPath, JsonUtility.ToJson(ToSerializable(data), true));
 
             if (File.Exists(SavePath))
             {
@@ -120,6 +123,10 @@ public static class LabSettingsStore
     {
         if (data == null) return;
         data = Sanitize(data);
+
+        // 按键绑定跟着设置一起生效：玩家每帧从 TuningLab.Bindings 读。
+        var lab = UnityEngine.Object.FindAnyObjectByType<TuningLab>();
+        if (lab != null) lab.ApplyBindings(data.bindings);
 
         // 50% 对应原来的 100%；DSP 滤镜实现 0-2 倍增益，避免被 Unity 音量属性钳掉。
         AudioListener.volume = 1f;
@@ -153,6 +160,20 @@ public static class LabSettingsStore
             data.sfxVolume *= 0.5f;
             data.version = 2;
         }
+        // v2 → v3：加入按键绑定。旧档没有这个字段，补默认值。
+        if (data.version < 3)
+        {
+            if (data.bindings == null) data.bindings = new LabBindings();
+            data.version = 3;
+        }
+        if (data.bindings == null) data.bindings = new LabBindings() /* 兜底 */;
+        data.bindings.big ??= LabBindings.DefaultBig();
+        data.bindings.small ??= LabBindings.DefaultSmall();
+        if (data.bindings.big.keys == null || data.bindings.big.keys.Length != LabBindingSet.ActionCount)
+            data.bindings.big = LabBindings.DefaultBig();
+        if (data.bindings.small.keys == null || data.bindings.small.keys.Length != LabBindingSet.ActionCount)
+            data.bindings.small = LabBindings.DefaultSmall();
+
         data.masterVolume = Mathf.Clamp01(data.masterVolume);
         data.musicVolume = Mathf.Clamp01(data.musicVolume);
         data.sfxVolume = Mathf.Clamp01(data.sfxVolume);
@@ -163,6 +184,87 @@ public static class LabSettingsStore
         return data;
     }
 
+    // ------------------------------------------------------------------
+    // 序列化层：Key 枚举不能直接进 JSON。
+    //
+    // JsonUtility 会把 enum 写成数字，一旦 InputSystem 调整枚举顺序，
+    // 老存档里的按键就会指向别的键。所以按键一律按名字存。
+    // 其余字段原样透传，DTO 只负责把 bindings 换成字符串。
+    // ------------------------------------------------------------------
+
+    [Serializable]
+    sealed class SerializableSettings
+    {
+        public int version;
+        public float masterVolume;
+        public float musicVolume;
+        public float sfxVolume;
+        public bool fullscreen;
+        public int screenWidth;
+        public int screenHeight;
+        public float brightness;
+        /// <summary>按 LabAction 顺序的按键名：大块在前，小块在后。</summary>
+        public string[] bigKeys;
+        public string[] smallKeys;
+
+        public LabSettingsData ToData()
+        {
+            var data = new LabSettingsData
+            {
+                version = version,
+                masterVolume = masterVolume,
+                musicVolume = musicVolume,
+                sfxVolume = sfxVolume,
+                fullscreen = fullscreen,
+                screenWidth = screenWidth,
+                screenHeight = screenHeight,
+                brightness = brightness,
+                bindings = new LabBindings(
+                    KeysFrom(bigKeys, true),
+                    KeysFrom(smallKeys, false)),
+            };
+            return data;
+        }
+
+        static LabBindingSet KeysFrom(string[] ids, bool isBig)
+        {
+            // 没写就是老档：用默认值，不要让玩家丢键位。
+            if (ids == null || ids.Length != LabBindingSet.ActionCount)
+                return isBig ? LabBindings.DefaultBig() : LabBindings.DefaultSmall();
+
+            var set = new LabBindingSet();
+            for (int i = 0; i < LabBindingSet.ActionCount; i++)
+                set.keys[i] = LabBindings.ParseKey(ids[i]);
+            return set;
+        }
+    }
+
+    static SerializableSettings ToSerializable(LabSettingsData data)
+    {
+        var bindings = data.bindings ?? new LabBindings();
+        return new SerializableSettings
+        {
+            version = data.version,
+            masterVolume = data.masterVolume,
+            musicVolume = data.musicVolume,
+            sfxVolume = data.sfxVolume,
+            fullscreen = data.fullscreen,
+            screenWidth = data.screenWidth,
+            screenHeight = data.screenHeight,
+            brightness = data.brightness,
+            bigKeys = IdsOf(bindings.big),
+            smallKeys = IdsOf(bindings.small),
+        };
+    }
+
+    static string[] IdsOf(LabBindingSet set)
+    {
+        var ids = new string[LabBindingSet.ActionCount];
+        for (int i = 0; i < ids.Length; i++)
+            ids[i] = LabBindings.KeyId(set != null ? set.keys[i] : Key.None);
+        return ids;
+    }
+
     static bool TryRead(string path, out LabSettingsData data)
     {
         data = null;
@@ -171,7 +273,8 @@ public static class LabSettingsStore
         try
         {
             string json = File.ReadAllText(path);
-            data = JsonUtility.FromJson<LabSettingsData>(json);
+            var dto = JsonUtility.FromJson<SerializableSettings>(json);
+            data = dto != null ? dto.ToData() : null;
             if (data != null) return true;
             Debug.LogWarning($"LabSettingsStore: 设置档为空或不是对象（{path}）。");
         }

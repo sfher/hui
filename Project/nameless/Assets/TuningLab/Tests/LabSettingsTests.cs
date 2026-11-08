@@ -158,7 +158,7 @@ public sealed class LabSettingsTests
         var loaded = LabSettingsStore.Load(out bool fromDisk);
 
         Assert.IsTrue(fromDisk);
-        Assert.AreEqual(2, loaded.version);
+        Assert.AreEqual(LabSettingsStore.CurrentVersion, loaded.version, "迁移到当前版本");
         Assert.AreEqual(0.5f, loaded.masterVolume, 1e-4f);
         Assert.AreEqual(0.25f, loaded.musicVolume, 1e-4f);
         Assert.AreEqual(0f, loaded.sfxVolume, 1e-4f);

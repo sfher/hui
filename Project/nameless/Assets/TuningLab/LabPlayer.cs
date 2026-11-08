@@ -1763,34 +1763,42 @@ public class LabPlayer : MonoBehaviour
         var kb = Keyboard.current;
         if (kb == null) return;
 
-        bool left, right, up, down;
-        if (scheme == Scheme.P1)
-        {
-            // A（大框）：A/D 移动，W/S 冲刺方向，空格 跳，左 Shift 冲刺
-            left = kb.aKey.isPressed;
-            right = kb.dKey.isPressed;
-            up = kb.wKey.isPressed;
-            down = kb.sKey.isPressed;
-            jumpHeld = kb.spaceKey.isPressed;
-            jumpDownThisFrame = kb.spaceKey.wasPressedThisFrame;
-            dashDownThisFrame = kb.leftShiftKey.wasPressedThisFrame;
-            recallDownThisFrame = kb.qKey.wasPressedThisFrame;
-        }
-        else
-        {
-            // B（小块）：方向键控制上下左右，/ 跳，句号 . 冲刺
-            up = kb.upArrowKey.isPressed;
-            down = kb.downArrowKey.isPressed;
-            left = kb.leftArrowKey.isPressed;
-            right = kb.rightArrowKey.isPressed;
-            jumpHeld = kb.slashKey.isPressed;
-            jumpDownThisFrame = kb.slashKey.wasPressedThisFrame;
-            dashDownThisFrame = kb.periodKey.wasPressedThisFrame;
-            recallDownThisFrame = kb.rightShiftKey.wasPressedThisFrame;
-        }
+        // 按键从绑定表读（Issue #94）：默认值见 LabBindings.DefaultBig / DefaultSmall。
+        // 绑定表可以是空的（例如场景里没挂设置组件），这时不会有任何键生效，
+        // 但注入输入的路径不受影响。
+        var bindings = lab != null ? lab.Bindings : null;
+        if (bindings == null) return;
+        var set = bindings.For(scheme == Scheme.P1);
+
+        bool left = Pressed(kb, set[LabAction.Left]);
+        bool right = Pressed(kb, set[LabAction.Right]);
+        bool up = Pressed(kb, set[LabAction.Up]);
+        bool down = Pressed(kb, set[LabAction.Down]);
+
+        Key jumpKey = set[LabAction.Jump];
+        jumpHeld = Pressed(kb, jumpKey);
+        jumpDownThisFrame = DownThisFrame(kb, jumpKey);
+        dashDownThisFrame = DownThisFrame(kb, set[LabAction.Dash]);
+        recallDownThisFrame = DownThisFrame(kb, set[LabAction.Recall]);
 
         moveX = (right ? 1f : 0f) - (left ? 1f : 0f);
         vertInput = (up ? 1f : 0f) - (down ? 1f : 0f);
+    }
+
+    /// <summary>这个键当前是否按住。Key.None 表示未绑定，永远 false。</summary>
+    static bool Pressed(Keyboard kb, Key key)
+    {
+        if (key == Key.None) return false;
+        var control = kb[key];
+        return control != null && control.isPressed;
+    }
+
+    /// <summary>这个键是否本帧按下。Key.None 永远 false。</summary>
+    static bool DownThisFrame(Keyboard kb, Key key)
+    {
+        if (key == Key.None) return false;
+        var control = kb[key];
+        return control != null && control.wasPressedThisFrame;
     }
 
     /// <summary>
