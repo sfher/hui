@@ -18,6 +18,9 @@ public class LabSettingsUI : MonoBehaviour
     public const float SaveDelay = 0.25f;
 
     // 翻页按钮：放在卡片外侧左边，竖直两个方按钮。
+    /// <summary>两栏之间的空隙。要分隔清楚，所以留得比行内间距宽不少。</summary>
+    const float ColumnGap = 44f;
+
     const float PageBtnSize = 48f;
     const float PageBtnGap = 12f;
     const float PageBtnMargin = 16f;
@@ -383,13 +386,19 @@ public class LabSettingsUI : MonoBehaviour
         var bindings = data.bindings ?? (data.bindings = new LabBindings());
 
         // 左右两栏：大块在左，小块在右。每栏顶部是角色头像 + 名字。
-        float colW = (CardW - Pad * 2f - 12f) * 0.5f;
+        float colW = (CardW - Pad * 2f - ColumnGap) * 0.5f;
         float leftX = Pad;
-        float rightX = Pad + colW + 12f;
+        float rightX = Pad + colW + ColumnGap;
         float top = RowStart - 8f;
 
         DrawSideColumn(card, leftX, top, colW, true, bindings);
         DrawSideColumn(card, rightX, top, colW, false, bindings);
+
+        // 两栏中间一条细竖线，让人一眼看出这是两个玩家各自的设置。
+        float sepX = Mathf.Round(card.x + (rightX - ColumnGap * 0.5f) * scale);
+        float sepTop = card.y + top * scale;
+        float sepBottom = card.y + (CardH - Pad - 44f) * scale;
+        DrawSolid(new Rect(sepX, sepTop, Mathf.Max(1f, scale), sepBottom - sepTop), PanelColor);
 
         // 底部：冲突提示 + 恢复默认。
         DrawControlsFooter(card, bindings);
@@ -431,7 +440,7 @@ public class LabSettingsUI : MonoBehaviour
         const float gap = 8f;
 
         var label = At(card, x, y + 4f, labelW, 24f);
-        GUI.Label(label, LabBindings.ActionName(action), PixelLabel(1));
+        GUI.Label(label, LabBindings.ActionName(action), PixelLabel(LabPixelFont.UiSize));
 
         var box = At(card, x + labelW + gap, y, w - labelW - gap, 32f);
 
@@ -471,7 +480,7 @@ public class LabSettingsUI : MonoBehaviour
         DrawFrame(rect, fill, border, 2f);
 
         string text = waiting ? "..." : LabBindings.KeyName(key);
-        var style = PixelLabel(1);
+        var style = PixelLabel(LabPixelFont.UiSize);
         style.alignment = TextAnchor.MiddleCenter;
         style.normal.textColor = conflict ? ConflictColor : ChipColor;
         GUI.Label(rect, text, style);
@@ -486,7 +495,7 @@ public class LabSettingsUI : MonoBehaviour
     void DrawBang(Rect rect)
     {
         DrawFrame(rect, ConflictColor, BorderColor, 1f);
-        var style = PixelLabel(1);
+        var style = PixelLabel(LabPixelFont.UiSize);
         style.alignment = TextAnchor.MiddleCenter;
         style.normal.textColor = new Color(0.05f, 0.02f, 0.03f, 1f);
         GUI.Label(rect, "!", style);
@@ -499,7 +508,7 @@ public class LabSettingsUI : MonoBehaviour
         DrawSeparator(card, y - 10f);
 
         var conflicted = bindings.ConflictedKeys();
-        var info = PixelLabel(1);
+        var info = PixelLabel(LabPixelFont.UiSize);
         if (conflicted.Count > 0)
         {
             info.normal.textColor = ConflictColor;
@@ -519,7 +528,7 @@ public class LabSettingsUI : MonoBehaviour
             PlayFeedback();
         }
         DrawFrame(reset, PanelColor, ChipColourForHover(reset, ChipColor), 2f);
-        var rs = PixelLabel(1);
+        var rs = PixelLabel(LabPixelFont.UiSize);
         rs.alignment = TextAnchor.MiddleCenter;
         rs.normal.textColor = ChipColor;
         GUI.Label(reset, "恢复默认", rs);
@@ -741,10 +750,8 @@ public class LabSettingsUI : MonoBehaviour
         var font = LabPixelFont.Font;
         if (font != null) style.font = font;
 
-        // size 是"倍率"：1 → 10px，2 → 20px。
-        style.fontSize = LabPixelFont.IsPixel
-            ? LabPixelFont.SnapSize(size * LabPixelFont.BaseSize)
-            : Mathf.RoundToInt(style.fontSize * 0.75f);
+        // 现在直接传具体像素数，不再乘倍率。
+        style.fontSize = LabPixelFont.SnapSize(size);
 
         style.normal.textColor = ChipColor;
         return style;

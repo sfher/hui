@@ -44,13 +44,20 @@ public static class LabPixelFont
     /// <summary>是否拿到了像素字体。</summary>
     public static bool IsPixel => Font != null;
 
+    /// <summary>界面实际使用的字号。改这里一处即可。</summary>
+    public const int UiSize = 18;
+
     /// <summary>
     /// 把期望字号吸到像素字体的清晰尺寸（BaseSize 的整数倍）。
-    /// 没拿到像素字体时原样返回，让内置字体自己决定。
+    ///
+    /// 例外：正好等于 <see cref="UiSize"/> 时原样保留 —— 18 不是 10 的整数倍，
+    /// 但这是界面上定下来的字号，吸附会改变观感。
+    /// 非整数倍字号仍能看，只是边缘不如 10/20 那么锐利。
     /// </summary>
     public static int SnapSize(int size)
     {
         if (!IsPixel) return Mathf.Max(8, size);
+        if (size == UiSize) return UiSize;
         int multiple = Mathf.Max(1, Mathf.RoundToInt(size / (float)BaseSize));
         return multiple * BaseSize;
     }
