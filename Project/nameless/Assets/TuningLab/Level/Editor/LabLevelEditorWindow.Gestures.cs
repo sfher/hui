@@ -461,7 +461,11 @@ public sealed partial class LabLevelEditorWindow
             {
                 level.Data.MoveContents(areas, delta);
             }
-            MarkDirty(true);
+
+            // 拖动中不要重建预览：RebuildPreview 会先 ClearGenerated 再 Build，
+            // 每帧跑一遍等于每帧把整个场景拆了重搭，大关卡上就是"碎裂"的观感。
+            // 松手时 EndGesture 里重建一次即可。
+            MarkDirty(false);
             return;
         }
 
@@ -540,7 +544,12 @@ public sealed partial class LabLevelEditorWindow
                 for (int x = x0; x <= x1; x++)
                 {
                     var cell = new Vector2Int(x, y);
-                    if (InEditArea(cell, data)) data.AddCell(cell);
+                    if (!InEditArea(cell, data)) continue;
+
+                    if (fillTarget == FillTarget.HiddenBlock)
+                        data.PlaceHiddenBlock(cell, fillGroupId);
+                    else
+                        data.AddCell(cell);
                 }
         }
 

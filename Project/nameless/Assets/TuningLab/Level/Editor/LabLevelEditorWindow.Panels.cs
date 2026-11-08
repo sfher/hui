@@ -176,7 +176,18 @@ public sealed partial class LabLevelEditorWindow
                 EditorGUILayout.HelpBox("左键拖动擦掉实心格。", MessageType.None);
                 break;
             case Tool.Rect:
-                EditorGUILayout.HelpBox("左键拖出一个矩形，松手后填充实心格。", MessageType.None);
+                EditorGUILayout.HelpBox(
+                    fillTarget == FillTarget.HiddenBlock
+                        ? "左键拖出一个矩形，松手后填充隐藏方块。"
+                        : "左键拖出一个矩形，松手后填充实心地形。",
+                    MessageType.None);
+
+                EditorGUILayout.LabelField("填充内容", EditorStyles.boldLabel);
+                fillTarget = (FillTarget)GUILayout.Toolbar(
+                    (int)fillTarget, new[] { "实心地形", "隐藏方块" });
+
+                if (fillTarget == FillTarget.HiddenBlock)
+                    fillGroupId = EditorGUILayout.IntField("分组 id", fillGroupId);
                 break;
             case Tool.Rope:
                 EditorGUILayout.HelpBox("左键在格子底部放一根竖绳，向上长。", MessageType.None);

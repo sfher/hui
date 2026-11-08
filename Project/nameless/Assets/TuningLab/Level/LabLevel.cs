@@ -16,13 +16,46 @@ public sealed class LabLevel : MonoBehaviour
 
     [SerializeField, HideInInspector] LabLevelData data = new LabLevelData();
 
+    /// <summary>
+    /// 外部关卡数据资源（Issue #109）。有值时以资源为准，内嵌的 data 不再使用。
+    /// 为空时行为和以前完全一样，老场景不用改。
+    /// </summary>
+    [SerializeField] LabLevelAsset asset;
+
+    public LabLevelAsset Asset => asset;
+
     public LabLevelData Data
     {
         get
         {
+            if (asset != null) return asset.Data;
             if (data == null) data = new LabLevelData();
             return data;
         }
+    }
+
+    /// <summary>换绑数据资源。传 null 表示退回内嵌数据。</summary>
+    public void BindAsset(LabLevelAsset target)
+    {
+        asset = target;
+        RebuildPreview();
+    }
+
+    /// <summary>
+    /// 把另一份关卡数据合并进来（Issue #109）。
+    ///
+    /// 规则：
+    ///   - 所有物件按格去重，同一格不会出现两份
+    ///   - 地形格取并集
+    ///   - bounds 取两者的并集（合并后相机范围要罩住全部内容）
+    ///   - 出生点、相机尺寸这类"单值"字段**不动**，保留接收方自己的
+    ///
+    /// 返回实际新增的条目数。
+    /// </summary>
+    public int MergeFrom(LabLevelData other)
+    {
+        if (other == null) return 0;
+        return Data.MergeFrom(other);
     }
 
     public Rect CameraBounds =>

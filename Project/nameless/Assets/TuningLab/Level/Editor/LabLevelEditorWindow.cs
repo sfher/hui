@@ -40,6 +40,13 @@ public sealed partial class LabLevelEditorWindow : EditorWindow
     }
 
     /// <summary>下一次拉选区时怎么处理当前选区。</summary>
+    /// <summary>矩形填充的目标：普通地形还是隐藏方块（Issue #109）。</summary>
+    enum FillTarget
+    {
+        Solid = 0,
+        HiddenBlock = 1,
+    }
+
     enum MarqueeMode
     {
         Replace = 0,
@@ -134,6 +141,10 @@ public sealed partial class LabLevelEditorWindow : EditorWindow
     // 选择 / 拖动
     Pick picked;
     bool movingContent;
+    /// <summary>矩形工具的填充目标。默认铺普通地形，保持原有手感。</summary>
+    FillTarget fillTarget = FillTarget.Solid;
+    /// <summary>填充隐藏方块时用的分组 id；0 也是普通组。</summary>
+    int fillGroupId;
     bool movingSelection;
     LabLevelData.ContentSelection moveCapture;
     Vector2Int moveLastCell;

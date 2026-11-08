@@ -1231,6 +1231,140 @@ public sealed class LabLevelData
         return removed;
     }
 
+    /// <summary>
+    /// 把另一份关卡数据并进来（Issue #109）。
+    ///
+    /// 所有条目按"身份"去重：地形按格、物件按格+分组，同一个东西不会出现两份。
+    /// bounds 取并集，因为合并后相机得罩住全部内容。
+    /// 出生点和相机尺寸这类单值字段保持接收方自己的，不被覆盖。
+    ///
+    /// 返回新增的条目总数。
+    /// </summary>
+    public int MergeFrom(LabLevelData other)
+    {
+        if (other == null || ReferenceEquals(other, this)) return 0;
+        Normalize();
+        other.Normalize();
+
+        int added = 0;
+
+        // ---- 地形：取并集 ----
+        if (other.solids != null)
+            for (int i = 0; i < other.solids.Count; i++)
+                if (AddCell(other.solids[i])) added++;
+
+        // ---- 绳：同一中心 + 同一朝向 + 同一长度算同一根 ----
+        if (other.ropes != null)
+            for (int i = 0; i < other.ropes.Count; i++)
+            {
+                var rope = other.ropes[i];
+                if (HasRope(rope)) continue;
+                ropes.Add(rope);
+                added++;
+            }
+
+        // ---- 钥匙 / 召回：按位置 ----
+        if (other.keys != null)
+            for (int i = 0; i < other.keys.Count; i++)
+            {
+                var key = other.keys[i];
+                if (HasAt(keys, p => p.position, key.position)) continue;
+                keys.Add(key);
+                added++;
+            }
+
+        if (other.recalls != null)
+            for (int i = 0; i < other.recalls.Count; i++)
+                if (PlaceRecall(other.recalls[i].cell)) added++;
+
+        // ---- 门：按位置 ----
+        if (other.doors != null)
+            for (int i = 0; i < other.doors.Count; i++)
+            {
+                var door = other.doors[i];
+                if (HasAt(doors, d => d.position, door.position)) continue;
+                doors.Add(door);
+                added++;
+            }
+
+        // ---- 地刺：按格，朝向取先来的 ----
+        if (other.spikes != null)
+            for (int i = 0; i < other.spikes.Count; i++)
+                if (PlaceSpike(other.spikes[i].cell, other.spikes[i].dir)) added++;
+
+        // ---- 冰 / 岩浆 / 隐藏方块：按格 + 分组 ----
+        if (other.ices != null)
+            for (int i = 0; i < other.ices.Count; i++)
+                if (PlaceIce(other.ices[i].cell, other.ices[i].groupId)) added++;
+
+        if (other.magmas != null)
+            for (int i = 0; i < other.magmas.Count; i++)
+                if (PlaceMagma(other.magmas[i].cell, other.magmas[i].groupId)) added++;
+
+        if (other.hiddenBlocks != null)
+            for (int i = 0; i < other.hiddenBlocks.Count; i++)
+                if (PlaceHiddenBlock(other.hiddenBlocks[i].cell, other.hiddenBlocks[i].groupId)) added++;
+
+        if (other.repairBlocks != null)
+            for (int i = 0; i < other.repairBlocks.Count; i++)
+                if (PlaceRepairBlock(other.repairBlocks[i].cell)) added++;
+
+        // ---- 重生点 / 传送点：按中心 ----
+        if (other.respawnPoints != null)
+            for (int i = 0; i < other.respawnPoints.Count; i++)
+            {
+                var point = other.respawnPoints[i];
+                if (HasAt(respawnPoints, p => p.position, point.position)) continue;
+                respawnPoints.Add(point);
+                added++;
+            }
+
+        if (other.teleports != null)
+            for (int i = 0; i < other.teleports.Count; i++)
+            {
+                var point = other.teleports[i];
+                if (HasAt(teleports, p => p.position, point.position)) continue;
+                teleports.Add(point);
+                added++;
+            }
+
+        // ---- 相机范围取并集 ----
+        bounds = Union(bounds, other.bounds);
+
+        return added;
+    }
+
+    static RectInt Union(RectInt a, RectInt b)
+    {
+        int xMin = Mathf.Min(a.xMin, b.xMin);
+        int yMin = Mathf.Min(a.yMin, b.yMin);
+        int xMax = Mathf.Max(a.xMax, b.xMax);
+        int yMax = Mathf.Max(a.yMax, b.yMax);
+        return new RectInt(xMin, yMin, xMax - xMin, yMax - yMin);
+    }
+
+    bool HasRope(LabRopeSpec rope)
+    {
+        if (ropes == null) return false;
+        for (int i = 0; i < ropes.Count; i++)
+        {
+            var existing = ropes[i];
+            if (existing.center != rope.center) continue;
+            if (existing.orientation != rope.orientation) continue;
+            if (existing.cells != rope.cells) continue;
+            return true;
+        }
+        return false;
+    }
+
+    static bool HasAt<T>(List<T> list, System.Func<T, Vector2> position, Vector2 target)
+    {
+        if (list == null) return false;
+        for (int i = 0; i < list.Count; i++)
+            if ((position(list[i]) - target).sqrMagnitude < 0.0001f) return true;
+        return false;
+    }
+
     /// <summary>选区里有几个条目（地形格也算一个），给面板显示用。</summary>
     public int CountContents(IList<RectInt> areas, bool includeSolids)
     {
