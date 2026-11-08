@@ -439,6 +439,154 @@ public sealed class LabLightBridgeTests
         void CountDespawned(LabPhantom _) => despawned++;
     }
 
+    // 攀爬（竖直光桥的左右两面）---------------------------------------
+
+    /// <summary>竖直光桥的侧面能攀附：贴上去往里推就挂住，之后横向锁死。</summary>
+    [UnityTest]
+    public IEnumerator VerticalBridgeCanBeClimbed()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+        Assert.Greater(phantom.Bridge.Count, 0, "先有竖直光桥");
+
+        // 把 B 放在光桥右侧、贴着它的那一面，并往里推。
+        var b = phantom.Target;
+        var block = phantom.Bridge[0];
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 4; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+
+        Assert.IsTrue(b.Climbing, "往光桥侧面推应该挂住（Climbing）");
+        Assert.AreEqual(0f, b.Velocity.x, 0.01f, "攀爬态横向锁死，AD 不产生横向速度");
+    }
+
+    /// <summary>攀爬时 WS 以走路速度上下移动，且不受重力。</summary>
+    [UnityTest]
+    public IEnumerator ClimbUsesWalkSpeedAndIgnoresGravity()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var block = phantom.Bridge[0];
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 4; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住");
+
+        // 向上爬一段时间，记录竖直位移。
+        float y0 = b.FootY;
+        int steps = 12;
+        for (int i = 0; i < steps; i++)
+        {
+            b.InjectInput(-1f, 1f);
+            yield return new WaitForFixedUpdate();
+        }
+        float upSpeed = (b.FootY - y0) / (steps * Time.fixedDeltaTime);
+
+        Assert.AreEqual(lab.walkSpeed, upSpeed, lab.walkSpeed * 0.25f,
+            "WS 以走路速度上下爬，实际 " + upSpeed.ToString("0.00"));
+        Assert.AreEqual(0f, b.GetComponent<Rigidbody2D>().gravityScale, 0.001f, "攀爬时不受重力");
+
+        // 向下爬同样生效。
+        float y1 = b.FootY;
+        for (int i = 0; i < steps; i++)
+        {
+            b.InjectInput(-1f, -1f);
+            yield return new WaitForFixedUpdate();
+        }
+        float downSpeed = (y1 - b.FootY) / (steps * Time.fixedDeltaTime);
+        Assert.AreEqual(lab.walkSpeed, downSpeed, lab.walkSpeed * 0.25f,
+            "S 向下爬，实际 " + downSpeed.ToString("0.00"));
+    }
+
+    /// <summary>再按跳跃脱离攀爬，并给出跳跃速度。</summary>
+    [UnityTest]
+    public IEnumerator JumpReleasesClimb()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var block = phantom.Bridge[0];
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 4; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住");
+
+        b.InjectInput(-1f, 0f, jumpPressed: true);
+        yield return new WaitForFixedUpdate();
+
+        Assert.IsFalse(b.Climbing, "按跳跃脱离攀附");
+        Assert.Greater(b.Velocity.y, 0f, "脱离时带上跳跃速度");
+    }
+
+    /// <summary>光桥消失后攀附立刻结束，人掉回去。</summary>
+    [UnityTest]
+    public IEnumerator ClimbEndsWhenBridgeDisappears()
+    {
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var b = phantom.Target;
+        var block = phantom.Bridge[0];
+        b.Teleport(new Vector2(block.Bounds.max.x + b.HalfHeight + 0.1f, block.Bounds.center.y));
+        yield return new WaitForFixedUpdate();
+
+        for (int i = 0; i < 4; i++)
+        {
+            b.InjectInput(-1f, 0f);
+            yield return new WaitForFixedUpdate();
+        }
+        Assert.IsTrue(b.Climbing, "先挂住");
+
+        phantom.DestroyPhantom();
+        yield return new WaitForFixedUpdate();
+        yield return new WaitForFixedUpdate();
+
+        Assert.IsFalse(b.Climbing, "光桥没了就不该还挂在空中");
+    }
+
+    /// <summary>竖直光桥压过一格红块也能生成（只穿一格，不往后延续）。</summary>
+    [UnityTest]
+    public IEnumerator VerticalBridgePassesOneSolidCell()
+    {
+        var level = root.AddComponent<LabLevel>();
+        lab.level = level;
+        // 在竖直光桥正上方放一格红块。
+        level.Data.AddCell(new Vector2Int(0, 6));
+        level.Data.Normalize();
+        level.BuildRuntime(root.transform, slick);
+        yield return null;
+        Physics2D.SyncTransforms();
+
+        var phantom = SpawnPhantom(LabForms.TopBit | LabForms.BottomBit, new Vector2Int(0, 5));
+        yield return null;
+
+        var cells = new HashSet<Vector2Int>();
+        for (int i = 0; i < phantom.Bridge.Count; i++) cells.Add(phantom.Bridge[i].Cell);
+
+        Assert.IsTrue(cells.Contains(new Vector2Int(0, 6)),
+            "红块那一格要生成光桥（允许穿一次），实际 " + string.Join(",", cells));
+        Assert.IsFalse(cells.Contains(new Vector2Int(0, 7)),
+            "只穿一格，红块之后不再延续");
+    }
+
     // 销毁 ---------------------------------------------------------------
 
     /// <summary>幻影被 FIFO 覆盖时，它的光桥一起拆掉。</summary>

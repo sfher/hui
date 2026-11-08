@@ -33,6 +33,9 @@ public sealed class LabLightBridgeBlock : MonoBehaviour
     /// <summary>二级穿过后的忽略时长，和竖绳保持一致。</summary>
     public float passWindow = 0.22f;
 
+    /// <summary>碰撞箱范围，供攀附判定用。</summary>
+    public Bounds Bounds => body != null ? body.bounds : new Bounds(transform.position, Vector3.one);
+
     /// <summary>一次光桥接触。字段与 <see cref="LabVerticalRope.RopeContact"/> 对齐。</summary>
     public struct BridgeContact
     {

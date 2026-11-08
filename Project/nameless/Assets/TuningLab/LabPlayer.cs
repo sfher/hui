@@ -21,6 +21,10 @@ public class LabPlayer : MonoBehaviour
 
     // ---- 对外读数 ----
     public bool Grounded => grounded;
+    /// <summary>正攀附在竖直光桥上。</summary>
+    public bool Climbing => climbing != null;
+    /// <summary>正在攀附的那条光桥。</summary>
+    public LabLightBridgeBlock ClimbTarget => climbing;
     public bool IsDead { get; private set; }
     public bool IsAlive => !IsDead;
     /// <summary>每次 <see cref="Teleport"/> 自增；重生点靠它区分“走进去”和“被传送/复活放进去”。</summary>
@@ -206,6 +210,10 @@ public class LabPlayer : MonoBehaviour
     Vector2 chamberVelocity;        // B 进入时的速度 V前
     Vector2 chamberDir;             // B 进入时的冲刺轴，射出取它的反向
     bool gliding;                   // 水平射出：速度降到零级之前不受重力
+    // ---- 竖直光桥攀附（#114 跟进）----
+    LabLightBridgeBlock climbing;   // 正在攀附的竖光桥；非 null 表示处于攀爬态
+    float climbSide;                // 攀附在哪一侧：+1 在方块右边，-1 在左边
+    bool inputInjected;             // 本帧输入由规格注入，跳过一次键盘读取
     RigidbodyType2D teleportPreviousBodyType;
     float teleportPreviousGravityScale;
     bool teleportFrozen;
@@ -422,6 +430,14 @@ public class LabPlayer : MonoBehaviour
         }
 
         // ---- 水平控制 ----
+        // ---- 竖直光桥攀附：优先于普通移动 ----
+        if (UpdateClimb(dt, ref v))
+        {
+            rb.linearVelocity = v;
+            lastFixedVelocity = v;
+            return;
+        }
+
         if (dashLock <= 0f)
         {
             // 空气制动：空中水平方向持续 -g，和竖直方向的重力对称。
@@ -498,6 +514,122 @@ public class LabPlayer : MonoBehaviour
         rb.linearVelocity = v;
         // 撞地形时用它算分量：碰撞回调触发时速度已经被物理解算改掉（贴地时竖直分量已经是 0）
         lastFixedVelocity = v;
+    }
+
+    /// <summary>
+    /// 竖直光桥的攀附。返回 true 表示这一帧由攀爬接管，调用方不要再跑普通移动。
+    ///
+    /// 规则（需求原话：左右两条边都有攀附功能，撞上去就停住，AD 无效，
+    /// WS 以走路速度上下爬，再按跳跃脱离）：
+    /// - 进入：贴着竖直光桥的左侧或右侧面，并且有朝里的输入（或本来就贴着）
+    /// - 攀爬中：横向锁死贴在那一面，竖直方向按 input 的符号以 walkSpeed 移动，不受重力
+    /// - 脱离：按跳跃、光桥消失、或人已经不在方块旁边
+    /// </summary>
+    bool UpdateClimb(float dt, ref Vector2 v)
+    {
+        // 脱离条件优先判：光桥没了就立刻掉下去。
+        if (climbing == null || !climbing.isActiveAndEnabled)
+        {
+            if (climbing != null) EndClimb(ref v);
+            climbing = null;
+            climbSide = 0f;
+        }
+
+        // 跳跃脱离。
+        if (jumpDownThisFrame && climbing != null)
+        {
+            EndClimb(ref v);
+            v.y = lab.JumpVelocity;
+            jumpBuffer = 0f;
+            coyoteTimer = 0f;
+            grounded = false;
+            BeginAir();
+            LabAudio.Play(LabAudio.Cue.Jump);
+            return true;
+        }
+
+        if (climbing == null)
+        {
+            // 尝试进入：面朝方向贴着竖直光桥的侧面。
+            var candidate = FindClimbable();
+            if (candidate.block == null) return false;
+            climbing = candidate.block;
+            climbSide = candidate.side;
+            grounded = false;
+            gliding = false;
+            dashPhase = DashPhase.None;
+            dashTimer = 0f;
+        }
+
+        // 已经贴着但被挤开了（例如方块移动）就结束。
+        Bounds body = col.bounds;
+        Bounds target = climbing.Bounds;
+        bool stillBeside = Mathf.Abs(body.center.y - target.center.y) <= target.extents.y + body.extents.y
+                           && Mathf.Abs(body.center.x - target.center.x) <= target.extents.x + body.extents.x + 0.35f;
+        if (!stillBeside)
+        {
+            EndClimb(ref v);
+            return false;
+        }
+
+        // 横向锁死：把玩家按在攀附的那一面上。
+        float faceX = climbSide > 0f
+            ? target.max.x + body.extents.x
+            : target.min.x - body.extents.x;
+        v.x = 0f;
+        rb.position = new Vector2(faceX, rb.position.y);
+
+        // 竖直：WS 以走路速度上下爬，不受重力。
+        v.y = vertInput * lab.walkSpeed;
+        rb.gravityScale = 0f;
+        return true;
+    }
+
+    /// <summary>找一根可以攀附的竖直光桥。返回 null 表示旁边没有。</summary>
+    (LabLightBridgeBlock block, float side) FindClimbable()
+    {
+        if (LabLightBridgeBlock.All.Count == 0) return (null, 0f);
+        if (InDashState || IsIntangible) return (null, 0f);
+
+        Bounds body = col.bounds;
+        const float reach = 0.35f;
+        LabLightBridgeBlock best = null;
+        float bestSide = 0f;
+
+        for (int i = 0; i < LabLightBridgeBlock.All.Count; i++)
+        {
+            var block = LabLightBridgeBlock.All[i];
+            if (block == null || !block.Vertical) continue;
+            Bounds target = block.Bounds;
+
+            // 竖直方向要有重叠，否则不是"贴着一面墙"。
+            if (body.max.y < target.min.y || body.min.y > target.max.y) continue;
+
+            // 右边：玩家在方块右侧，左缘贴着方块右缘。要往里推才附着，路过不算。
+            float rightGap = body.min.x - target.max.x;
+            if (rightGap >= -0.2f && rightGap <= reach && moveX < -0.01f)
+            {
+                if (best == null) { best = block; bestSide = 1f; }
+                continue;
+            }
+            // 左边：玩家在方块左侧，右缘贴着方块左缘。
+            float leftGap = target.min.x - body.max.x;
+            if (leftGap >= -0.2f && leftGap <= reach && moveX > 0.01f)
+            {
+                if (best == null) { best = block; bestSide = -1f; }
+            }
+        }
+
+        return (best, bestSide);
+    }
+
+    void EndClimb(ref Vector2 v)
+    {
+        climbing = null;
+        climbSide = 0f;
+        v.y = 0f;
+        if (lab != null) rb.gravityScale = lab.GravityScale;
+        grounded = false;
     }
 
     void BeginAir()
@@ -1616,6 +1748,11 @@ public class LabPlayer : MonoBehaviour
 
     void ReadInput()
     {
+        // 注入的输入一直有效，直到下一次 InjectInput 或 ClearInjectedInput。
+        // 不能只跳过一次：Update 在 FixedUpdate 之后跑，跳过一次会让
+        // 第一帧 FixedUpdate 读到上一帧残留的零值。
+        if (inputInjected) return;
+
         moveX = 0f;
         vertInput = 0f;
         jumpDownThisFrame = false;
@@ -1654,6 +1791,32 @@ public class LabPlayer : MonoBehaviour
 
         moveX = (right ? 1f : 0f) - (left ? 1f : 0f);
         vertInput = (up ? 1f : 0f) - (down ? 1f : 0f);
+    }
+
+    /// <summary>
+    /// 直接注入一帧输入。只给 PlayMode 规格用：无头编辑器里合成键盘的
+    /// wasPressedThisFrame 会被播放器循环冲掉，键位路径测不到。
+    /// </summary>
+    public void InjectInput(float horizontal, float vertical, bool jumpPressed = false, bool dashPressed = false)
+    {
+        moveX = Mathf.Clamp(horizontal, -1f, 1f);
+        vertInput = Mathf.Clamp(vertical, -1f, 1f);
+        jumpDownThisFrame = jumpPressed;
+        jumpHeld = jumpPressed;
+        dashDownThisFrame = dashPressed;
+        recallDownThisFrame = false;
+        inputInjected = true;
+    }
+
+    /// <summary>清掉注入的输入，回到真实键盘。</summary>
+    public void ClearInjectedInput()
+    {
+        inputInjected = false;
+        moveX = 0f;
+        vertInput = 0f;
+        jumpDownThisFrame = false;
+        jumpHeld = false;
+        dashDownThisFrame = false;
     }
 
     // ---- 视觉分级：颜色就是等级 ----

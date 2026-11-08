@@ -111,6 +111,10 @@ public class TuningLab : MonoBehaviour
     public float tierFirstCells = 4f;
     [Tooltip("每级之间的落差（格）。4 = 4/8/12/16 格。")]
     public float tierSpacingCells = 4f;
+    [Tooltip("玻璃大炮 / L 形发射的增益格数。v' = √(Vb² + 2·g·这个数)。2 个间距起步，越大射得越猛。")]
+    public float cannonBoostCells = 8f;
+    [Tooltip("幻影 L 形的进膛门槛（竖直来速）。低于这个速度撞上去不转入，避免走路蹭一下就触发。")]
+    public float converterEntrySpeed = 12f;
     [Tooltip("等级数（不含零级）。4 → 零级..四级。")]
     [Range(1, 6)] public int tierCount = 4;
 
@@ -274,8 +278,11 @@ public class TuningLab : MonoBehaviour
     public float MagmaBreakSpeed => SpeedForCells(Boundary(Mathf.Max(0, LabMagma.BreakTier - 1)));
     /// <summary>冰面加速的上限：最高等级的名义顶端（默认 v4 ≈ 44.72）。</summary>
     public float IceMaxSpeed => SpeedForCells(Boundary(MaxTier - 1) + Mathf.Max(0.01f, tierSpacingCells));
-    /// <summary>大炮发射的增量 = 一个等级间距的 v²（= 2·g·间距格数）。v' = √(Vb² + 这个数)。</summary>
-    public float CannonBoostV2 => 2f * gravity * Mathf.Max(0.01f, tierSpacingCells);
+    /// <summary>
+    /// 大炮发射的增量 = cannonBoostCells 格的 v²（= 2·g·格数）。v' = √(Vb² + 这个数)。
+    /// 公式保持"平方和再开方"不变，只把增益格数做成可调参数。
+    /// </summary>
+    public float CannonBoostV2 => 2f * gravity * Mathf.Max(0.01f, cannonBoostCells);
 
     // ---- 等级门槛：等距生成，不再手填数组 ----
     float[] cachedBounds;

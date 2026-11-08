@@ -234,7 +234,7 @@ public sealed class LabCannonTests
 
         a.Fire();
 
-        float expected = Mathf.Sqrt(vBefore * vBefore + 2f * lab.gravity * lab.tierSpacingCells);
+        float expected = Mathf.Sqrt(vBefore * vBefore + lab.CannonBoostV2);
         Assert.AreEqual(expected, b.Velocity.magnitude, 0.05f);
         Assert.Greater(b.Velocity.y, 0f, "从上面冲进来 → 往上面打出去");
         Assert.IsFalse(a.Loaded);
@@ -250,10 +250,11 @@ public sealed class LabCannonTests
     }
 
     [UnityTest]
-    public IEnumerator FallThenDashInThenFireGainsFourCells()
+    public IEnumerator FallThenDashInThenFireGainsConfiguredCells()
     {
-        // 验收：B 自由落体 x 格，最后冲刺进入 A，直接射出，B 大约能到 x+4 格
-        const float drop = 6f;
+        // 验收：B 自由落体 x 格，最后冲刺进入 A，直接射出，
+        // B 大约能到 x + cannonBoostCells 格（默认 8）。
+        const float drop = 14f;
 
         MakeFloor();
         var a = MakeFrame();
@@ -282,7 +283,7 @@ public sealed class LabCannonTests
         float fireTime = Time.time;
 
         float vOut = b.Velocity.magnitude;
-        Assert.AreEqual(Mathf.Sqrt(v * v + 2f * lab.gravity * lab.tierSpacingCells), vOut, 0.05f);
+        Assert.AreEqual(Mathf.Sqrt(v * v + lab.CannonBoostV2), vOut, 0.05f);
 
         float fireFootY = b.FootY;
         float apex = fireFootY;
@@ -298,8 +299,9 @@ public sealed class LabCannonTests
         float sampleError = vOut * Time.fixedDeltaTime;
         Assert.AreEqual(lab.CellsForSpeed(vOut), gained, sampleError + 0.05f, "上升高度 = 出膛速度的折算格数");
         // 自由落体只有 drop - 1 格（最后 1 格是定速冲刺，不涨速度），
-        // 再加一个等级间距的 4 格，所以是 drop + 3 ≈ "x + 4 格（大约）"。
-        Assert.AreEqual(drop + 3f, gained, 0.6f, "出膛后上升 ≈ 落体高度 + 一个等级间距");
+        // 再加 cannonBoostCells 格的增益，所以是 drop - 1 + 增益。
+        Assert.AreEqual(drop - 1f + lab.cannonBoostCells, gained, 0.6f,
+            "出膛后上升 ≈ 落体高度 + 大炮增益格数");
     }
 
     [UnityTest]
@@ -316,7 +318,7 @@ public sealed class LabCannonTests
 
         Assert.Less(b.Velocity.x, 0f, "从左边冲进来 → 往左边打出去");
         Assert.AreEqual(Mathf.Abs(b.Velocity.x),
-            Mathf.Sqrt(EntrySpeed * EntrySpeed + 2f * lab.gravity * lab.tierSpacingCells), 0.05f);
+            Mathf.Sqrt(EntrySpeed * EntrySpeed + lab.CannonBoostV2), 0.05f);
 
         yield return StepFixed(1);
         Assert.AreEqual(0f, b.GetComponent<Rigidbody2D>().gravityScale, 0.0001f, "水平射出：不受重力");
@@ -409,7 +411,7 @@ public sealed class LabCannonTests
         float vOut = b.Velocity.magnitude;
         Assert.Greater(vOut, vIn, "出膛必须比进入快");
         Assert.Greater(b.Velocity.y, 0f, "从上面进来 → 往上面出去");
-        Assert.AreEqual(Mathf.Sqrt(vIn * vIn + 2f * lab.gravity * lab.tierSpacingCells), vOut, 0.3f);
+        Assert.AreEqual(Mathf.Sqrt(vIn * vIn + lab.CannonBoostV2), vOut, 0.3f);
 
         // 关键：出膛之后要真的跑过物理步。手感的"没速度"= 第一发出去就被别的结算抹掉。
         yield return StepFixed(3);

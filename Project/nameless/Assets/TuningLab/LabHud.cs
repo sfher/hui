@@ -239,8 +239,8 @@ public class LabHud : MonoBehaviour
             LabMagma.BreakTier, lab.MagmaBreakSpeed), small);
         if (collapseCount > 0)
             GUILayout.Label(string.Format("  塌框 {0} 次   最近 {1}（热二遇红热 = 死亡）", collapseCount, lastCollapse), WarnStyle());
-        GUILayout.Label(string.Format("大炮      v' = √(Vb² + {0:0})   一个等级间距 = {1:0.0} 格   方向 = 进入方向的反向",
-            lab.CannonBoostV2, lab.tierSpacingCells), small);
+        GUILayout.Label(string.Format("大炮      v' = √(Vb² + {0:0})   增益 {1:0.0} 格（一个等级间距 {2:0.0}）   方向 = 进入方向的反向",
+            lab.CannonBoostV2, lab.cannonBoostCells, lab.tierSpacingCells), small);
         GUILayout.Label("  碎 1 条边 = u 大炮，相邻 2 = L，相对 2 = =/‖，只剩 1 = 矛，全碎 = 灵体", small);
         GUILayout.Label("碰撞      速度 + 冲刺态 整体互换（动量守恒）", small);
         if (hasHit)
