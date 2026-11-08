@@ -46,6 +46,18 @@ public sealed class LabPhantom : MonoBehaviour
     /// <summary>‖ 是竖直光桥，= 是横向光桥。</summary>
     public bool BridgeIsVertical => Form == LabForm.Elevator && LabForms.ElevatorIsVertical(SpiritMask);
 
+    /// <summary>
+    /// 2048 幻影：矛形（只剩一条边）的幻影会自己朝那条边指的方向一直滑到撞墙（Issue #118）。
+    /// 不再是被动挡人的方块，而是会走的机关。
+    /// </summary>
+    public bool Is2048 => Form == LabForm.Spear;
+
+    /// <summary>2048 正在滑动的方向：null 表示还没开始 / 已经撞墙停下。</summary>
+    public Vector2Int? SlideDir { get; private set; }
+
+    /// <summary>2048 是否正在移动。</summary>
+    public bool Sliding => Is2048 && SlideDir.HasValue;
+
     TuningLab lab;
     BoxCollider2D body;
     LabVisual visual;
@@ -55,6 +67,7 @@ public sealed class LabPhantom : MonoBehaviour
     LabPlayer.DashState entryDash;
     Collider2D ignoredCollider;
     bool ignoredWasEnabled;
+    float slideAccumulator;
 
     /// <summary>幻影半高，用来把出膛的玩家放到表面外侧。</summary>
     float HalfHeight => body != null ? body.size.y * 0.5f : Pixels / (2f * TuningLab.CellPixels);
@@ -79,7 +92,11 @@ public sealed class LabPhantom : MonoBehaviour
     /// 来源进膛时 collider 会被关掉，出膛后重建引用，所以每物理步核对一次。
     /// 炮和 L 都是瞬时出膛（#76），这里不再有延时计时器。
     /// </summary>
-    void FixedUpdate() => RefreshIgnorePair();
+    void FixedUpdate()
+    {
+        RefreshIgnorePair();
+        Step2048();
+    }
 
     void RefreshIgnorePair()
     {
@@ -94,6 +111,77 @@ public sealed class LabPhantom : MonoBehaviour
         ignoredWasEnabled = enabledNow;
         if (current != null && body != null)
             Physics2D.IgnoreCollision(body, current, true);
+    }
+
+    /// <summary>
+    /// 2048 幻影的移动（Issue #118）。
+    ///
+    /// 规则来自设计：
+    ///   - 触发：只剩任意一条边（矛形）时
+    ///   - 不受重力和水平阻力，速度固定为二级速度的最小值
+    ///   - 一直朝那条边指的方向走，直到撞墙（撞上的那一格停下，不回退）
+    ///   - **不会与 B 相碰**：滑动期间对 B 完全无碰撞
+    ///
+    /// 一格一格跳，不是连续滑：和 2048 的格子一致，也避免高速穿透地形。
+    /// </summary>
+    void Step2048()
+    {
+        if (!Is2048 || lab == null) return;
+
+        // 第一次进来决定方向：矛的朝向就是它的移动方向。
+        if (!SlideDir.HasValue)
+        {
+            // 只剩一条边，用剩下那条边指的方向当走向。
+            var axis = LabForms.EdgeNormal(LabForms.RemainingEdge(SpiritMask));
+            var dir = new Vector2Int(Mathf.RoundToInt(axis.x), Mathf.RoundToInt(axis.y));
+            if (dir == Vector2Int.zero) return;
+            SlideDir = dir;
+
+            // 2048 不挡 B：一启动就把 B 的碰撞放掉。
+            ReleasePlayerCollision();
+        }
+
+        var step = SlideDir.Value;
+        float speed = SlideSpeed;                    // 二级速度的最小值
+        if (speed <= 0.01f) return;
+
+        // 攒够一整格才挪，保证永远落在格心上。
+        var next = new Vector2Int(Cell.x + step.x, Cell.y + step.y);
+
+        // 撞墙就停：那一格不进去，幻影留在这里。
+        if (!CanSlideInto(next))
+        {
+            SlideDir = null;
+            return;
+        }
+
+        slideAccumulator += speed * Time.fixedDeltaTime;
+        if (slideAccumulator < 1f) return;
+        slideAccumulator -= 1f;
+
+        Cell = next;
+        transform.position = new Vector3(next.x + 0.5f, next.y + 0.5f, 0f);
+        if (body != null) body.transform.position = transform.position;
+    }
+
+    /// <summary>"二级速度的最小值" = 二级区间下界，即 Boundary(1)。</summary>
+    float SlideSpeed => lab != null ? lab.SpeedForCells(lab.Boundary(1)) : 0f;
+
+    /// <summary>2048 能不能进这一格。只看地形和物件，不看玩家（它本来就不和 B 碰）。</summary>
+    bool CanSlideInto(Vector2Int cell)
+    {
+        var center = new Vector2(cell.x + 0.5f, cell.y + 0.5f);
+        if (HasBlockerAt(center)) return false;
+        if (!LabLightBridgeBlock.IsFree(cell)) return false;
+        return true;
+    }
+
+    /// <summary>2048 启动后对 B 不再有碰撞。</summary>
+    void ReleasePlayerCollision()
+    {
+        if (Target == null || body == null) return;
+        var collider = Target.GetComponent<Collider2D>();
+        if (collider != null) Physics2D.IgnoreCollision(body, collider, true);
     }
 
     void OnCollisionEnter2D(Collision2D c) => TryAbsorbCollision(c);

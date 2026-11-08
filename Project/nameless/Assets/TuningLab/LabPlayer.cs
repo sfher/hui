@@ -1269,6 +1269,9 @@ public class LabPlayer : MonoBehaviour
         spiritTimer = lab != null ? lab.spiritDuration : 6f;
     }
 
+    /// <summary>只给规格用：直接进入灵体态，不依赖碎边流程。</summary>
+    public void DebugEnterSpirit() => EnterSpirit();
+
     /// <summary>离开灵体（复活、传送、形态被改写）：交还实心碰撞箱。</summary>
     void ExitSpirit()
     {

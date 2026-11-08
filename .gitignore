@@ -93,3 +93,6 @@ desktop.ini
 # 视觉工具缓存（本地临时产物，不提交）
 .dsh-vision-toolkit/
 .WorkBuddy-vision-toolkit/
+
+# 本地临时工作目录
+.work/
