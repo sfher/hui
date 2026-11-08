@@ -181,6 +181,16 @@ public class TuningLab : MonoBehaviour
     [Tooltip("拖尾亮点 V4 初始不透明度。")]
     [Range(0f, 1f)] public float trailAlphaTopTier = 1f;
 
+    [Header("冲刺图章")]
+    [Tooltip("同屏图章上限；满员回收最老的一张。0 = 关闭整个效果。")]
+    [Range(0, 32)] public int dashGhostCap = 12;
+    [Tooltip("每张图章从盖下到完全消失的时间（秒），全程线性变淡。")]
+    public float dashGhostLife = 0.3f;
+    [Tooltip("冲刺期间每隔多少秒盖一张图章；冲刺起步的第一张立即盖。")]
+    public float dashGhostInterval = 0.05f;
+    [Tooltip("图章盖下时的不透明度倍率，之后在此基础上线性淡到 0。")]
+    [Range(0f, 1f)] public float dashGhostAlpha = 0.6f;
+
     public LabPlayer PlayerA { get; private set; }
     public LabPlayer PlayerB { get; private set; }
     public Camera Cam { get; private set; }
