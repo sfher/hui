@@ -17,6 +17,11 @@ public class LabSettingsUI : MonoBehaviour
 
     public const float SaveDelay = 0.25f;
 
+    // 翻页按钮：放在卡片外侧左边，竖直两个方按钮。
+    const float PageBtnSize = 48f;
+    const float PageBtnGap = 12f;
+    const float PageBtnMargin = 16f;
+
     const float CardW = 560f;
     const float CardH = 432f;
     const float Pad = 16f;
@@ -40,6 +45,9 @@ public class LabSettingsUI : MonoBehaviour
     static readonly Color ReservedFillColor = new Color(0.30f, 0.34f, 0.44f, 1f);
     static readonly Color BorderColor = new Color(0.02f, 0.03f, 0.05f, 1f);
     static readonly Color ReservedColor = new Color(0.62f, 0.66f, 0.74f, 1f);
+    /// <summary>冲突标记的红色。</summary>
+    static readonly Color ConflictColor = new Color(1f, 0.32f, 0.32f, 1f);
+    /// <summary>直接沿用游戏里两个玩家的本体颜色（TuningLab.ColorA / ColorB）。</summary>
 
     static readonly Dictionary<string, Texture2D> iconCache = new Dictionary<string, Texture2D>();
     static Texture2D placeholderIcon;
@@ -52,11 +60,69 @@ public class LabSettingsUI : MonoBehaviour
     int activeSlider = -1;
     float scale = 1f;
 
+    /// <summary>设置界面的两页。</summary>
+    enum Page { Basic, Controls }
+
+    Page page = Page.Basic;
+
+    /// <summary>操控页里正在等待改键的位置；null 表示没有选中。</summary>
+    sealed class PendingRebind
+    {
+        public bool isBig;
+        public LabAction action;
+    }
+    PendingRebind pendingRebind;
+
     readonly List<Vector2Int> resolutions = new List<Vector2Int>();
     bool resolutionsReady;
     int resolutionIndex;
 
     public bool IsOpen => open;
+
+    /// <summary>界面对外暴露的页枚举。</summary>
+    public enum SettingsPage { Basic, Controls }
+
+    public SettingsPage CurrentPage => page == Page.Basic ? SettingsPage.Basic : SettingsPage.Controls;
+
+    /// <summary>当前是否有键在等待改键。</summary>
+    public bool IsRebinding => pendingRebind != null;
+
+    /// <summary>整套绑定里有没有冲突。界面据此在底部提示。</summary>
+    public bool HasConflicts => data != null && data.bindings != null
+                                && data.bindings.ConflictedKeys().Count > 0;
+
+    public void ShowBasicPage() { page = Page.Basic; pendingRebind = null; }
+    public void ShowControlsPage() { page = Page.Controls; }
+
+    /// <summary>进入某个键的改键状态。</summary>
+    public void BeginRebind(bool isBig, LabAction action)
+        => pendingRebind = new PendingRebind { isBig = isBig, action = action };
+
+    /// <summary>把指定的键写进当前待改位置。给规格用；真实输入走 CaptureRebind。</summary>
+    public void DebugApplyRebindKey(Key key)
+    {
+        if (pendingRebind == null || data == null) return;
+        data.bindings ??= new LabBindings();
+        data.bindings.Assign(pendingRebind.isBig, pendingRebind.action, key);
+        lab?.ApplyBindings(data.bindings);
+        pendingRebind = null;
+        MarkDirty();
+    }
+
+    public void DebugCancelRebind() { pendingRebind = null; }
+
+    /// <summary>两边一起恢复默认。</summary>
+    public void ResetBindingsToDefault()
+    {
+        if (data == null) return;
+        data.bindings = new LabBindings();
+        lab?.ApplyBindings(data.bindings);
+        pendingRebind = null;
+        MarkDirty();
+    }
+
+    /// <summary>仅供验证工具切页。</summary>
+    public void DebugShowControlsPage() => ShowControlsPage();
     public LabSettingsData Data => data;
 
     void Start()
@@ -290,9 +356,17 @@ public class LabSettingsUI : MonoBehaviour
         DrawSolid(new Rect(0f, 0f, Screen.width, Screen.height), OverlayColor);
         DrawFrame(card, CardColor, AccentColor, 3f);
 
+        DrawPageButtons(card);
         DrawTitle(card);
         DrawClose(card);
 
+        if (page == Page.Basic) DrawBasicPage(card);
+        else DrawControlsPage(card);
+    }
+
+    /// <summary>基本设置页：就是原来那一页。</summary>
+    void DrawBasicPage(Rect card)
+    {
         DrawVolumeRow(card, RowStart + RowH * 0f, VolumeRowMaster, "MasterVolume", ref data.masterVolume, false);
         DrawVolumeRow(card, RowStart + RowH * 1f, VolumeRowMusic, "MusicVolume", ref data.musicVolume, false);
         DrawVolumeRow(card, RowStart + RowH * 2f, VolumeRowSfx, "SfxVolume", ref data.sfxVolume, false);
@@ -302,7 +376,220 @@ public class LabSettingsUI : MonoBehaviour
         DrawResolutionRow(card, RowStart + RowH * 3f);
         DrawFullscreenRow(card, RowStart + RowH * 4f);
         DrawReservedBrightnessRow(card, RowStart + RowH * 5f);
-        DrawReservedKeybindRow(card, RowStart + RowH * 6f);
+    }
+
+    void DrawControlsPage(Rect card)
+    {
+        var bindings = data.bindings ?? (data.bindings = new LabBindings());
+
+        // 左右两栏：大块在左，小块在右。每栏顶部是角色头像 + 名字。
+        float colW = (CardW - Pad * 2f - 12f) * 0.5f;
+        float leftX = Pad;
+        float rightX = Pad + colW + 12f;
+        float top = RowStart - 8f;
+
+        DrawSideColumn(card, leftX, top, colW, true, bindings);
+        DrawSideColumn(card, rightX, top, colW, false, bindings);
+
+        // 底部：冲突提示 + 恢复默认。
+        DrawControlsFooter(card, bindings);
+
+        // 正在等改键：吃掉这一帧的按键。
+        if (pendingRebind != null) CaptureRebind(bindings);
+    }
+
+    /// <summary>一栏：角色头像 + 名字 + 7 个动作的按键框。</summary>
+    void DrawSideColumn(Rect card, float x, float y, float w, bool isBig, LabBindings bindings)
+    {
+        var set = bindings.For(isBig);
+
+        // ---- 角色标识：直接用游戏里的方块素材，不写字 ----
+        var avatar = At(card, x, y, 40f, 40f);
+        DrawSideAvatar(avatar, isBig);
+
+        // 头像右边画一条同色横线，视觉上把这一栏和对面那栏隔开。
+        DrawSolid(At(card, x + 48f, y + 12f, w - 48f, 3f),
+            isBig ? TuningLab.ColorA : TuningLab.ColorB);
+
+        y += 52f;
+
+        // ---- 7 个动作 ----
+        var conflicted = bindings.ConflictedKeys();
+        for (int a = 0; a < LabBindingSet.ActionCount; a++)
+        {
+            var action = (LabAction)a;
+            DrawKeyRow(card, x, y, w, isBig, action, set[action], conflicted, bindings);
+            y += 40f;
+        }
+    }
+
+    /// <summary>一行：动作名 + 按键框。</summary>
+    void DrawKeyRow(Rect card, float x, float y, float w, bool isBig, LabAction action,
+        Key key, HashSet<Key> conflicted, LabBindings bindings)
+    {
+        const float labelW = 92f;
+        const float gap = 8f;
+
+        var label = At(card, x, y + 4f, labelW, 24f);
+        GUI.Label(label, LabBindings.ActionName(action), PixelLabel(1));
+
+        var box = At(card, x + labelW + gap, y, w - labelW - gap, 32f);
+
+        bool waiting = pendingRebind != null
+                       && pendingRebind.isBig == isBig
+                       && pendingRebind.action == action;
+        bool conflict = conflicted.Contains(key);
+
+        bool clicked = KeyBox(box, key, waiting, conflict);
+        if (clicked)
+        {
+            // 同时只允许改一个：点新的就换掉旧的。
+            pendingRebind = new PendingRebind { isBig = isBig, action = action };
+        }
+    }
+
+    /// <summary>
+    /// 按键框。三种状态：
+    ///   白色边框 = 正常
+    ///   淡蓝边框 = 正在等改键
+    ///   红色边框 + 感叹号 = 冲突
+    /// </summary>
+    bool KeyBox(Rect rect, Key key, bool waiting, bool conflict)
+    {
+        bool hover = rect.Contains(Event.current.mousePosition);
+        bool clicked = GUI.Button(rect, GUIContent.none, GUIStyle.none);
+        if (clicked) PlayFeedback();
+
+        Color border = conflict ? ConflictColor
+            : waiting ? AccentColor
+            : ChipColor;
+
+        Color fill = waiting ? new Color(0.08f, 0.18f, 0.24f, 1f)
+            : hover ? new Color(0.16f, 0.21f, 0.30f, 1f)
+            : PanelColor;
+
+        DrawFrame(rect, fill, border, 2f);
+
+        string text = waiting ? "..." : LabBindings.KeyName(key);
+        var style = PixelLabel(1);
+        style.alignment = TextAnchor.MiddleCenter;
+        style.normal.textColor = conflict ? ConflictColor : ChipColor;
+        GUI.Label(rect, text, style);
+
+        // 冲突时右上角画一个感叹号。
+        if (conflict) DrawBang(new Rect(rect.xMax - 14f * scale, rect.y - 6f * scale, 14f * scale, 14f * scale));
+
+        return clicked;
+    }
+
+    /// <summary>冲突标记：深色底 + 红色感叹号。</summary>
+    void DrawBang(Rect rect)
+    {
+        DrawFrame(rect, ConflictColor, BorderColor, 1f);
+        var style = PixelLabel(1);
+        style.alignment = TextAnchor.MiddleCenter;
+        style.normal.textColor = new Color(0.05f, 0.02f, 0.03f, 1f);
+        GUI.Label(rect, "!", style);
+    }
+
+    /// <summary>底部：冲突数量提示 + 恢复默认按钮。</summary>
+    void DrawControlsFooter(Rect card, LabBindings bindings)
+    {
+        float y = CardH - Pad - 32f;
+        DrawSeparator(card, y - 10f);
+
+        var conflicted = bindings.ConflictedKeys();
+        var info = PixelLabel(1);
+        if (conflicted.Count > 0)
+        {
+            info.normal.textColor = ConflictColor;
+            GUI.Label(At(card, Pad, y + 4f, 320f, 24f),
+                "按键冲突 " + conflicted.Count + " 处（仍可退出）", info);
+        }
+        else
+        {
+            info.normal.textColor = ReservedColor;
+            GUI.Label(At(card, Pad, y + 4f, 320f, 24f), "无冲突", info);
+        }
+
+        var reset = At(card, CardW - Pad - 96f, y, 96f, 32f);
+        if (GUI.Button(reset, GUIContent.none, GUIStyle.none))
+        {
+            ResetBindingsToDefault();
+            PlayFeedback();
+        }
+        DrawFrame(reset, PanelColor, ChipColourForHover(reset, ChipColor), 2f);
+        var rs = PixelLabel(1);
+        rs.alignment = TextAnchor.MiddleCenter;
+        rs.normal.textColor = ChipColor;
+        GUI.Label(reset, "恢复默认", rs);
+    }
+
+    Color ChipColourForHover(Rect rect, Color normal)
+        => rect.Contains(Event.current.mousePosition) ? ChipHoverColor : normal;
+
+    /// <summary>可以被绑定的键。InputSystem 的 Key 枚举本身就覆盖全部物理键。</summary>
+    static readonly Key[] AllAssignableKeys = BuildKeyList();
+
+    static Key[] BuildKeyList()
+    {
+        var list = new List<Key>();
+        foreach (Key k in System.Enum.GetValues(typeof(Key)))
+            if (k != Key.None) list.Add(k);
+        return list.ToArray();
+    }
+
+    /// <summary>把这一帧读到的按键写进绑定表。</summary>
+    void CaptureRebind(LabBindings bindings)
+    {
+        var kb = Keyboard.current;
+        if (kb == null) return;
+
+        // Esc 取消，不占用 Esc 本身。
+        if (kb.escapeKey.wasPressedThisFrame)
+        {
+            pendingRebind = null;
+            return;
+        }
+
+        foreach (Key candidate in AllAssignableKeys)
+        {
+            if (candidate == Key.Escape || candidate == Key.None) continue;
+            var control = kb[candidate];
+            if (control == null || !control.wasPressedThisFrame) continue;
+
+            bindings.Assign(pendingRebind.isBig, pendingRebind.action, candidate);
+            lab?.ApplyBindings(bindings);
+            pendingRebind = null;
+            MarkDirty();
+            PlayFeedback();
+            return;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 翻页按钮：卡片外侧左边，竖直两个。不写字，只用图标。
+
+    void DrawPageButtons(Rect card)
+    {
+        float size = PageBtnSize * scale;
+        float gap = PageBtnGap * scale;
+        float x = card.x - PageBtnMargin * scale - size;
+        float totalH = size * 2f + gap;
+        float y = Mathf.Round(card.y + (card.height - totalH) * 0.5f);
+
+        if (IconButton(new Rect(x, y, size, size), "Settings",
+                page == Page.Basic, true, out _))
+        {
+            page = Page.Basic;
+            pendingRebind = null;
+        }
+
+        if (IconButton(new Rect(x, y + size + gap, size, size), "MoveArrows",
+                page == Page.Controls, true, out _))
+        {
+            page = Page.Controls;
+        }
     }
 
     Rect At(Rect card, float x, float y, float w, float h)
@@ -439,6 +726,61 @@ public class LabSettingsUI : MonoBehaviour
         DrawSolid(new Rect(content.x, content.y + content.height * 0.62f,
             content.width, Mathf.Max(1f, 2f * scale)), BorderColor);
     }
+
+    /// <summary>像素风文字样式。字体由 LabPixelFont 提供（缺字体时退回内置）。</summary>
+    /// <summary>像素字体的文字样式。字号会吸到 10 的整数倍，保证硬边。</summary>
+    static GUIStyle PixelLabel(int size)
+    {
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            richText = false,
+            wordWrap = false,
+            padding = new RectOffset(0, 0, 0, 0),
+        };
+
+        var font = LabPixelFont.Font;
+        if (font != null) style.font = font;
+
+        // size 是"倍率"：1 → 10px，2 → 20px。
+        style.fontSize = LabPixelFont.IsPixel
+            ? LabPixelFont.SnapSize(size * LabPixelFont.BaseSize)
+            : Mathf.RoundToInt(style.fontSize * 0.75f);
+
+        style.normal.textColor = ChipColor;
+        return style;
+    }
+
+    /// <summary>
+    /// 角色标识：照搬游戏里玩家本体的样子。
+    ///   A（大块）在 LabVisual 里是四条边围出来的空心框，颜色 TuningLab.ColorA；
+    ///   B（小块）是一整块实心方块，颜色 TuningLab.ColorB。
+    /// 这是代码画的，没有缩放游戏素材导致的模糊。
+    /// </summary>
+    void DrawSideAvatar(Rect rect, bool isBig)
+    {
+        float pad = 6f * scale;
+        var inner = PixelSnap(new Rect(rect.x + pad, rect.y + pad,
+            rect.width - pad * 2f, rect.height - pad * 2f));
+
+        if (isBig)
+        {
+            // 空心框：上下两条横边 + 左右两条竖边。
+            float t = Mathf.Max(2f * scale, Mathf.Round(inner.height * 0.16f));
+            Color c = TuningLab.ColorA;
+            DrawSolid(new Rect(inner.x, inner.y, inner.width, t), c);
+            DrawSolid(new Rect(inner.x, inner.yMax - t, inner.width, t), c);
+            DrawSolid(new Rect(inner.x, inner.y, t, inner.height), c);
+            DrawSolid(new Rect(inner.xMax - t, inner.y, t, inner.height), c);
+            return;
+        }
+
+        // 实心块。
+        DrawSolid(inner, TuningLab.ColorB);
+    }
+
+    /// <summary>把矩形对齐到整数像素，避免像素图被抗锯齿糊掉。</summary>
+    static Rect PixelSnap(Rect r)
+        => new Rect(Mathf.Round(r.x), Mathf.Round(r.y), Mathf.Round(r.width), Mathf.Round(r.height));
 
     void DrawIconChip(Rect rect, string icon, float alpha)
     {

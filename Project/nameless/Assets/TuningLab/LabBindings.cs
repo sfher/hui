@@ -257,6 +257,22 @@ public sealed class LabBindings
         return name;
     }
 
+    /// <summary>动作的中文名，界面用。</summary>
+    public static string ActionName(LabAction action)
+    {
+        switch (action)
+        {
+            case LabAction.Up: return "上";
+            case LabAction.Down: return "下";
+            case LabAction.Left: return "左";
+            case LabAction.Right: return "右";
+            case LabAction.Jump: return "跳跃";
+            case LabAction.Dash: return "冲刺";
+            case LabAction.Recall: return "召回";
+            default: return action.ToString();
+        }
+    }
+
     /// <summary>稳定 ID：写进存档用，避免枚举数值变化导致错位。</summary>
     public static string KeyId(Key key) => key.ToString();
 
