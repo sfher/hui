@@ -596,11 +596,22 @@ public class LabSettingsUI : MonoBehaviour
     // ------------------------------------------------------------------
     // 第三页：关于 / 制作信息
 
+    /// <summary>制作人登录名。头像在 Resources/Credits/&lt;login&gt;.png，拼写必须和 GitHub 账号一致。</summary>
+    public static string[] CreditLogins
+    {
+        get
+        {
+            var names = new string[Credits.Length];
+            for (int i = 0; i < Credits.Length; i++) names[i] = Credits[i].login;
+            return names;
+        }
+    }
+
     /// <summary>仓库协作者。头像在 Resources/Credits/&lt;login&gt;.png。</summary>
     static readonly (string login, string role)[] Credits =
     {
         ("sfher", "主程序"),
-        ("cyx-weijiheheda", "主程序"),
+        ("cyx-weimijiheheda", "主程序"),
         ("declinegod", "策划 / 主程序"),
         ("strelizia-z", "美术"),
     };
