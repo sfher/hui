@@ -40,9 +40,11 @@ public class LabSettingsUI : MonoBehaviour
     static readonly Color CardColor = new Color(0.06f, 0.08f, 0.13f, 1f);
     static readonly Color PanelColor = new Color(0.10f, 0.13f, 0.20f, 1f);
     static readonly Color TrackColor = new Color(0.16f, 0.20f, 0.29f, 1f);
-    static readonly Color ChipColor = new Color(0.91f, 0.89f, 0.80f, 1f);
-    static readonly Color ChipDimColor = new Color(0.58f, 0.57f, 0.52f, 1f);
-    static readonly Color ChipHoverColor = new Color(1f, 0.98f, 0.88f, 1f);
+    // 图标牌从"米白底 + 白图标"改成"深蓝底 + 浅图标"（Issue #131）：
+    // 原来那套白色牌子和游戏整体的深蓝夜色差太远，一开设置就像另一个游戏。
+    static readonly Color ChipColor = new Color(0.13f, 0.17f, 0.25f, 1f);
+    static readonly Color ChipDimColor = new Color(0.09f, 0.11f, 0.16f, 1f);
+    static readonly Color ChipHoverColor = new Color(0.20f, 0.26f, 0.36f, 1f);
     static readonly Color AccentColor = new Color(0.36f, 0.89f, 1f, 1f);
     static readonly Color AccentDimColor = new Color(0.20f, 0.48f, 0.58f, 1f);
     static readonly Color ReservedFillColor = new Color(0.30f, 0.34f, 0.44f, 1f);
@@ -795,7 +797,7 @@ public class LabSettingsUI : MonoBehaviour
         float inset = IconInset(rect);
         DrawFrame(rect, dim ? ChipDimColor : ChipColor, BorderColor, 2f);
         DrawIcon(new Rect(rect.x + inset, rect.y + inset,
-            rect.width - inset * 2f, rect.height - inset * 2f), icon, dim ? 0.55f : 1f);
+            rect.width - inset * 2f, rect.height - inset * 2f), icon, dim ? 0.55f : 1f, IconVariant.Light);
     }
 
     float IconInset(Rect rect) => (rect.width / scale > 44f ? 8f : 4f) * scale;
@@ -818,8 +820,12 @@ public class LabSettingsUI : MonoBehaviour
         Color border = selected ? ChipHoverColor : BorderColor;
         float inset = IconInset(rect);
         DrawFrame(rect, chip, border, 2f);
+
+        // 选中的牌子是青色底，白色图标压上去几乎看不见（Issue #131）——
+        // 换成反色版，深色描边在青底上才有对比。
         DrawIcon(new Rect(rect.x + inset, rect.y + inset,
-            rect.width - inset * 2f, rect.height - inset * 2f), icon, enabled ? 1f : 0.45f);
+            rect.width - inset * 2f, rect.height - inset * 2f), icon,
+            enabled ? 1f : 0.45f, selected ? IconVariant.Dark : IconVariant.Light);
         return clicked;
     }
 
@@ -906,9 +912,11 @@ public class LabSettingsUI : MonoBehaviour
         DrawSolid(new Rect(rect.xMax - t, rect.y, t, rect.height), border);
     }
 
-    static void DrawIcon(Rect rect, string name, float alpha)
+    static void DrawIcon(Rect rect, string name, float alpha) => DrawIcon(rect, name, alpha, IconVariant.Original);
+
+    static void DrawIcon(Rect rect, string name, float alpha, IconVariant variant)
     {
-        var texture = Icon(name);
+        var texture = Icon(name, variant);
         Color previous = GUI.color;
         GUI.color = new Color(1f, 1f, 1f, alpha);
         GUI.DrawTexture(rect, texture, ScaleMode.ScaleToFit, true);
@@ -916,12 +924,49 @@ public class LabSettingsUI : MonoBehaviour
     }
 
     /// <summary>图标入口：Resources/&lt;IconResourceFolder&gt;/&lt;name&gt;.png；缺失时用占位图。</summary>
-    public static Texture2D Icon(string name)
+    /// <summary>
+    /// 图标资源名。
+    /// 图标是双色的（黑描边 + 白填充），画在不同底色上要换一套：
+    /// 米白牌上用原版，深色 / 青色底上用 _Dark 反色版，否则白底白图看不清（Issue #131）。
+    /// </summary>
+    /// <summary>图标变体：对应三种底色。</summary>
+    public enum IconVariant
     {
-        string path = IconResourceFolder + "/" + name;
+        /// <summary>原版（黑描边 + 白填充）——给米色牌用。</summary>
+        Original = 0,
+        /// <summary>_Dark（深色实心 + 深蓝描边）——给青色高亮底用。</summary>
+        Dark = 1,
+        /// <summary>_Light（冷白 + 中蓝描边）——给深蓝牌用。</summary>
+        Light = 2,
+    }
+
+    static string IconName(string name, IconVariant variant)
+    {
+        switch (variant)
+        {
+            case IconVariant.Dark: return name + "_Dark";
+            case IconVariant.Light: return name + "_Light";
+            default: return name;
+        }
+    }
+
+    public static Texture2D Icon(string name) => Icon(name, IconVariant.Original);
+
+    public static Texture2D Icon(string name, IconVariant variant)
+    {
+        string path = IconResourceFolder + "/" + IconName(name, variant);
         if (iconCache.TryGetValue(path, out var cached) && cached != null) return cached;
 
         var texture = Resources.Load<Texture2D>(path);
+
+        // 变体缺失时退回原图，至少还有个图标，不至于开天窗。
+        if (texture == null && variant != IconVariant.Original)
+        {
+            path = IconResourceFolder + "/" + name;
+            if (iconCache.TryGetValue(path, out cached) && cached != null) return cached;
+            texture = Resources.Load<Texture2D>(path);
+        }
+
         if (texture == null)
         {
             Debug.LogWarning($"LabSettingsUI: 缺少设置图标 Resources/{path}.png，使用占位图。");
