@@ -74,7 +74,7 @@ public class LabSettingsUI : MonoBehaviour
     float scale = 1f;
 
     /// <summary>设置界面的两页。</summary>
-    enum Page { Basic, Controls }
+    enum Page { Basic, Controls, Credits }
 
     Page page = Page.Basic;
 
@@ -93,9 +93,14 @@ public class LabSettingsUI : MonoBehaviour
     public bool IsOpen => open;
 
     /// <summary>界面对外暴露的页枚举。</summary>
-    public enum SettingsPage { Basic, Controls }
+    public enum SettingsPage { Basic, Controls, Credits }
 
-    public SettingsPage CurrentPage => page == Page.Basic ? SettingsPage.Basic : SettingsPage.Controls;
+    public SettingsPage CurrentPage => page switch
+    {
+        Page.Basic => SettingsPage.Basic,
+        Page.Controls => SettingsPage.Controls,
+        _ => SettingsPage.Credits,
+    };
 
     /// <summary>当前是否有键在等待改键。</summary>
     public bool IsRebinding => pendingRebind != null;
@@ -105,7 +110,8 @@ public class LabSettingsUI : MonoBehaviour
                                 && data.bindings.ConflictedKeys().Count > 0;
 
     public void ShowBasicPage() { page = Page.Basic; pendingRebind = null; }
-    public void ShowControlsPage() { page = Page.Controls; }
+    public void ShowControlsPage() { page = Page.Controls; pendingRebind = null; }
+    public void ShowCreditsPage() { page = Page.Credits; pendingRebind = null; }
 
     /// <summary>进入某个键的改键状态。</summary>
     public void BeginRebind(bool isBig, LabAction action)
@@ -374,7 +380,8 @@ public class LabSettingsUI : MonoBehaviour
         DrawClose(card);
 
         if (page == Page.Basic) DrawBasicPage(card);
-        else DrawControlsPage(card);
+        else if (page == Page.Controls) DrawControlsPage(card);
+        else DrawCreditsPage(card);
     }
 
     /// <summary>基本设置页：就是原来那一页。</summary>
@@ -587,14 +594,141 @@ public class LabSettingsUI : MonoBehaviour
     }
 
     // ------------------------------------------------------------------
-    // 翻页按钮：卡片外侧左边，竖直两个。不写字，只用图标。
+    // 第三页：关于 / 制作信息
+
+    /// <summary>仓库协作者。头像在 Resources/Credits/&lt;login&gt;.png。</summary>
+    static readonly (string login, string role)[] Credits =
+    {
+        ("sfher", "主程序"),
+        ("cyx-weijiheheda", "主程序"),
+        ("declinegod", "策划 / 主程序"),
+        ("strelizia-z", "美术"),
+    };
+
+    void DrawCreditsPage(Rect card)
+    {
+        float y = RowStart - 8f;
+
+        // ---- 项目名 ----
+        var title = PixelLabel(LabPixelFont.UiSize * 2);
+        title.alignment = TextAnchor.MiddleCenter;
+        title.normal.textColor = AccentColor;
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 36f), "Hui", title);
+        y += 40f;
+
+        // ---- 副标题 ----
+        var sub = PixelLabel(LabPixelFont.UiSize);
+        sub.alignment = TextAnchor.MiddleCenter;
+        sub.normal.textColor = InkColor;
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 24f), "学院路 GameJam 参赛作品", sub);
+        y += 32f;
+
+        DrawSeparator(card, y);
+        y += 14f;
+
+        // ---- 制作者 ----
+        var head = PixelLabel(LabPixelFont.UiSize);
+        head.normal.textColor = ReservedColor;
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 24f), "制作者", head);
+        y += 30f;
+
+        const float avatar = 48f;
+        const float colGap = 12f;
+        int perRow = 2;
+        float colW = (CardW - Pad * 2f - colGap * (perRow - 1)) / perRow;
+
+        for (int i = 0; i < Credits.Length; i++)
+        {
+            int row = i / perRow;
+            int col = i % perRow;
+            float cx = Pad + col * (colW + colGap);
+            float cy = y + row * (avatar + 16f);
+
+            DrawCreditEntry(card, cx, cy, colW, avatar, Credits[i].login, Credits[i].role);
+        }
+
+        // ---- 版权 + 许可 ----
+        y += 2f * (avatar + 16f) + 10f;
+        DrawSeparator(card, y);
+        y += 10f;
+
+        var copy = PixelLabel(LabPixelFont.UiSize - 4);
+        copy.alignment = TextAnchor.MiddleCenter;
+        copy.normal.textColor = ReservedColor;
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 18f),
+            "© 2026 Hui 制作组", copy);
+        y += 18f;
+
+        // 代码用 CC BY 4.0：署名全体协作者（仓库 Collaborators 列表）。
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 18f),
+            "本作品采用 CC BY 4.0 许可", copy);
+        y += 18f;
+
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 18f),
+            "署名：" + CreditNames(), copy);
+        y += 18f;
+
+        // 第三方素材的许可。字体是 OFL，必须署名；
+        // 图标 / 美术包作者声明"无需署名、但不得再分发素材文件"。
+        var lic = PixelLabel(LabPixelFont.UiSize - 4);
+        lic.alignment = TextAnchor.MiddleCenter;
+        lic.normal.textColor = ReservedColor;
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 18f),
+            "字体 Fusion Pixel Font · SIL OFL 1.1", lic);
+        y += 18f;
+
+        GUI.Label(At(card, Pad, y, CardW - Pad * 2f, 18f),
+            "图标 1-bit Pixel Icons · 美术 Pixel Platformer Tileset", lic);
+    }
+
+    /// <summary>把所有协作者的登录名拼成一行，用于 CC BY 署名。</summary>
+    static string CreditNames()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < Credits.Length; i++)
+        {
+            if (i > 0) sb.Append(" · ");
+            sb.Append(Credits[i].login);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>一位制作者： avatar + 用户名 + 分工。</summary>
+    void DrawCreditEntry(Rect card, float x, float y, float w, float avatarSize,
+        string login, string role)
+    {
+        var avatarRect = At(card, x, y, avatarSize, avatarSize);
+        DrawFrame(avatarRect, PanelColor, BorderColor, 2f);
+
+        var texture = Resources.Load<Texture2D>("Credits/" + login);
+        if (texture != null)
+        {
+            var inner = new Rect(avatarRect.x + 2f, avatarRect.y + 2f,
+                avatarRect.width - 4f, avatarRect.height - 4f);
+            GUI.DrawTexture(inner, texture, ScaleMode.ScaleToFit, true);
+        }
+
+        float textX = x + avatarSize + 10f;
+        float textW = w - avatarSize - 10f;
+
+        var name = PixelLabel(LabPixelFont.UiSize - 2);
+        name.normal.textColor = InkColor;
+        GUI.Label(At(card, textX, y + 2f, textW, 20f), login, name);
+
+        var roleStyle = PixelLabel(LabPixelFont.UiSize - 4);
+        roleStyle.normal.textColor = ReservedColor;
+        GUI.Label(At(card, textX, y + 24f, textW, 18f), role, roleStyle);
+    }
+
+    // ------------------------------------------------------------------
+    // 翻页按钮：卡片外侧左边，竖直三个。不写字，只用图标。
 
     void DrawPageButtons(Rect card)
     {
         float size = PageBtnSize * scale;
         float gap = PageBtnGap * scale;
         float x = card.x - PageBtnMargin * scale - size;
-        float totalH = size * 2f + gap;
+        float totalH = size * 3f + gap * 2f;
         float y = Mathf.Round(card.y + (card.height - totalH) * 0.5f);
 
         if (IconButton(new Rect(x, y, size, size), "Settings",
@@ -608,6 +742,15 @@ public class LabSettingsUI : MonoBehaviour
                 page == Page.Controls, true, out _))
         {
             page = Page.Controls;
+            pendingRebind = null;
+        }
+
+        // 第三页：关于 / 制作信息。
+        if (IconButton(new Rect(x, y + (size + gap) * 2f, size, size), "Info",
+                page == Page.Credits, true, out _))
+        {
+            page = Page.Credits;
+            pendingRebind = null;
         }
     }
 

@@ -71,6 +71,40 @@ public sealed class LabSettingsControlsPageTests
     }
 
     [UnityTest]
+    public IEnumerator CanSwitchToCreditsPage()
+    {
+        yield return null;
+        ui.Open();
+        ui.ShowCreditsPage();
+        yield return null;
+        Assert.AreEqual(LabSettingsUI.SettingsPage.Credits, ui.CurrentPage,
+            "第三页是制作信息页（Issue #131）");
+
+        // 从别的页也能过来，再切回去。
+        ui.ShowBasicPage();
+        yield return null;
+        Assert.AreEqual(LabSettingsUI.SettingsPage.Basic, ui.CurrentPage);
+
+        ui.ShowCreditsPage();
+        yield return null;
+        Assert.AreEqual(LabSettingsUI.SettingsPage.Credits, ui.CurrentPage);
+    }
+
+    [UnityTest]
+    public IEnumerator CreditsPageIgnoresPendingRebind()
+    {
+        yield return null;
+        ui.Open();
+        ui.ShowControlsPage();
+        ui.BeginRebind(true, LabAction.Jump);
+        Assert.IsTrue(ui.IsRebinding);
+
+        ui.ShowCreditsPage();
+        yield return null;
+        Assert.IsFalse(ui.IsRebinding, "切到制作信息页要取消待改键");
+    }
+
+    [UnityTest]
     public IEnumerator SelectingAKeyThenPressingItRemapsThatAction()
     {
         yield return null;
