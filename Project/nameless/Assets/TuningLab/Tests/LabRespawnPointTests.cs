@@ -249,9 +249,13 @@ public sealed class LabRespawnPointTests
         Assert.IsFalse(lab.PlayerA.IsAlive);
 
         lab.PlayerB.Kill();
+
+        // 双人死亡结算被推迟到下一次 Update（死亡来自物理回调，不能在同一个物理步里
+        // 先生成再销毁）。所以 Kill() 一返回时位置还是死亡现场，必须先让 Update 跑一次。
+        yield return null;
+
         Vector2 slotA = lab.PlayerA.transform.position;
         Vector2 slotB = lab.PlayerB.transform.position;
-        yield return new WaitForFixedUpdate();
         yield return new WaitForFixedUpdate();
 
         Assert.IsTrue(lab.PlayerA.IsAlive);

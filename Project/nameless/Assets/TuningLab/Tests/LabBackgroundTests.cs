@@ -93,10 +93,14 @@ public sealed class LabBackgroundTests
         }
         Assert.AreEqual(count, go.transform.childCount, "滚动只回收重摆，不该越铺越多");
 
-        background.Refresh(Vector3.zero, 3f, 16f / 9f);
+        // 瓷砖是 27 单位见方，视野得跨过瓷砖边界块数才会变。
+        // 6.75 和 14 都还只覆盖 2×2（4 块），拿它们对比永远相等 —— 必须取
+        // 跨过 27 的两组，才测得到"多余的块被停用"。
+        background.Refresh(Vector3.zero, 14f, 16f / 9f);
         int smallActive = ActiveTiles().Length;
-        background.Refresh(Vector3.zero, 6.75f, 16f / 9f);
-        Assert.Greater(ActiveTiles().Length, smallActive, "视野变小后多余的块应停用");
+        background.Refresh(Vector3.zero, 30f, 16f / 9f);
+        Assert.Greater(ActiveTiles().Length, smallActive,
+            "视野变大后要铺更多块（小视野 " + smallActive + " 块）");
     }
 
     [Test]
