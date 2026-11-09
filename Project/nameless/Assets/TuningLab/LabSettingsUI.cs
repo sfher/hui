@@ -42,9 +42,17 @@ public class LabSettingsUI : MonoBehaviour
     static readonly Color TrackColor = new Color(0.16f, 0.20f, 0.29f, 1f);
     // 图标牌从"米白底 + 白图标"改成"深蓝底 + 浅图标"（Issue #131）：
     // 原来那套白色牌子和游戏整体的深蓝夜色差太远，一开设置就像另一个游戏。
+    //
+    // 注意：这里只改**牌子的底色**。文字和滑块用的是下面那几个 Ink*，
+    // 一旦混用就会出现"深色字画在深色底上"——第 2 页那些按键名就是这么看不见的。
     static readonly Color ChipColor = new Color(0.13f, 0.17f, 0.25f, 1f);
     static readonly Color ChipDimColor = new Color(0.09f, 0.11f, 0.16f, 1f);
     static readonly Color ChipHoverColor = new Color(0.20f, 0.26f, 0.36f, 1f);
+
+    /// <summary>前景色：文字、滑块轨道、旋钮。和牌子的底色是两回事。</summary>
+    static readonly Color InkColor = new Color(0.85f, 0.91f, 0.98f, 1f);
+    /// <summary>前景色的暗版，用于禁用态。</summary>
+    static readonly Color InkDimColor = new Color(0.45f, 0.50f, 0.58f, 1f);
     static readonly Color AccentColor = new Color(0.36f, 0.89f, 1f, 1f);
     static readonly Color AccentDimColor = new Color(0.20f, 0.48f, 0.58f, 1f);
     static readonly Color ReservedFillColor = new Color(0.30f, 0.34f, 0.44f, 1f);
@@ -484,7 +492,7 @@ public class LabSettingsUI : MonoBehaviour
         string text = waiting ? "..." : LabBindings.KeyName(key);
         var style = PixelLabel(LabPixelFont.UiSize);
         style.alignment = TextAnchor.MiddleCenter;
-        style.normal.textColor = conflict ? ConflictColor : ChipColor;
+        style.normal.textColor = conflict ? ConflictColor : InkColor;
         GUI.Label(rect, text, style);
 
         // 冲突时右上角画一个感叹号。
@@ -529,10 +537,10 @@ public class LabSettingsUI : MonoBehaviour
             ResetBindingsToDefault();
             PlayFeedback();
         }
-        DrawFrame(reset, PanelColor, ChipColourForHover(reset, ChipColor), 2f);
+        DrawFrame(reset, PanelColor, ChipColourForHover(reset, InkColor), 2f);
         var rs = PixelLabel(LabPixelFont.UiSize);
         rs.alignment = TextAnchor.MiddleCenter;
-        rs.normal.textColor = ChipColor;
+        rs.normal.textColor = InkColor;
         GUI.Label(reset, "恢复默认", rs);
     }
 
@@ -664,7 +672,7 @@ public class LabSettingsUI : MonoBehaviour
             var pip = At(card, start + i * (pipW + 10f), y + 19f, pipW, 10f);
             DrawFrame(pip, i == resolutionIndex ? AccentColor : TrackColor, BorderColor, 1f);
             if (i == resolutionIndex)
-                DrawSolid(At(card, start + i * (pipW + 10f) + 3f, y + 22f, pipW - 6f, 4f), ChipColor);
+                DrawSolid(At(card, start + i * (pipW + 10f) + 3f, y + 22f, pipW - 6f, 4f), InkColor);
         }
 
         bool canRight = resolutionIndex < resolutions.Count - 1;
@@ -733,7 +741,7 @@ public class LabSettingsUI : MonoBehaviour
             screen.y + screen.height * 0.34f,
             screen.width * 0.72f,
             screen.height * 0.40f);
-        DrawSolid(content, fullscreen ? ChipColor : ReservedColor);
+        DrawSolid(content, fullscreen ? InkColor : ReservedColor);
         DrawSolid(new Rect(content.x, content.y + content.height * 0.62f,
             content.width, Mathf.Max(1f, 2f * scale)), BorderColor);
     }
@@ -755,7 +763,7 @@ public class LabSettingsUI : MonoBehaviour
         // 现在直接传具体像素数，不再乘倍率。
         style.fontSize = LabPixelFont.SnapSize(size);
 
-        style.normal.textColor = ChipColor;
+        style.normal.textColor = InkColor;
         return style;
     }
 
@@ -843,7 +851,7 @@ public class LabSettingsUI : MonoBehaviour
         float knobW = 12f * scale;
         float knobH = 24f * scale;
         var knob = new Rect(x - knobW * 0.5f, rect.y + (rect.height - knobH) * 0.5f, knobW, knobH);
-        DrawFrame(knob, enabled ? ChipColor : ReservedColor, BorderColor, 2f);
+        DrawFrame(knob, enabled ? InkColor : ReservedColor, BorderColor, 2f);
 
         if (!enabled) return false;
 
