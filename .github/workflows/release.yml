@@ -58,7 +58,11 @@ jobs:
         include:
           - label: windows-x64
             target: StandaloneWindows64
-            image: windows-mono
+            # 不用 windows-mono：和 linux-il2cpp 一个毛病，镜像重、
+            # 加载 WindowsStandaloneSupport 之后 0.6 秒被 OOM killer 杀掉
+            # （Register platform support module → Killed，exit 137）。
+            # 项目是 Mono 后端，base 镜像内置 Windows 平台支持（Linux 已验证可行）。
+            image: base
           - label: macos-x64
             target: StandaloneOSX
             image: mac-mono
