@@ -64,6 +64,55 @@ public class LabSettingsUI : MonoBehaviour
 
     static readonly Dictionary<string, Texture2D> iconCache = new Dictionary<string, Texture2D>();
     static Texture2D placeholderIcon;
+    static Texture2D exitIcon;
+
+    /// <summary>退出图标：1-bit 像素风的"门 + 向外箭头"， SettingsIcons 包里没有这张图。</summary>
+    public static Texture2D ExitIcon
+    {
+        get
+        {
+            if (exitIcon == null) exitIcon = MakeExitIcon();
+            return exitIcon;
+        }
+    }
+
+    static Texture2D MakeExitIcon()
+    {
+        const int size = 16;
+        var tex = new Texture2D(size, size, TextureFormat.RGBA32, false)
+        {
+            name = "ExitIcon",
+            filterMode = FilterMode.Point,
+            wrapMode = TextureWrapMode.Clamp,
+            hideFlags = HideFlags.HideAndDontSave,
+        };
+        var pixels = new Color32[size * size];
+        var ink = new Color32(232, 242, 250, 255);
+        // 门框：左边一整根，上下横到 x=8，右边留出中间的缺口给箭头。
+        for (int y = 2; y <= 13; y++) pixels[y * size + 2] = ink;
+        for (int x = 2; x <= 8; x++)
+        {
+            pixels[2 * size + x] = ink;
+            pixels[13 * size + x] = ink;
+        }
+        for (int y = 2; y <= 5; y++) pixels[y * size + 8] = ink;
+        for (int y = 10; y <= 13; y++) pixels[y * size + 8] = ink;
+        // 箭头：杆穿过门洞指向右外。
+        for (int x = 5; x <= 12; x++)
+        {
+            pixels[7 * size + x] = ink;
+            pixels[8 * size + x] = ink;
+        }
+        pixels[5 * size + 11] = ink;
+        pixels[6 * size + 12] = ink;
+        pixels[7 * size + 13] = ink;
+        pixels[8 * size + 13] = ink;
+        pixels[9 * size + 12] = ink;
+        pixels[10 * size + 11] = ink;
+        tex.SetPixels32(pixels);
+        tex.Apply();
+        return tex;
+    }
 
     TuningLab lab;
     LabSettingsData data;
@@ -738,8 +787,9 @@ public class LabSettingsUI : MonoBehaviour
     {
         float size = PageBtnSize * scale;
         float gap = PageBtnGap * scale;
+        float exitGap = gap * 2f;
         float x = card.x - PageBtnMargin * scale - size;
-        float totalH = size * 3f + gap * 2f;
+        float totalH = size * 4f + gap * 2f + exitGap;
         float y = Mathf.Round(card.y + (card.height - totalH) * 0.5f);
 
         if (IconButton(new Rect(x, y, size, size), "Settings",
@@ -763,6 +813,20 @@ public class LabSettingsUI : MonoBehaviour
             page = Page.Credits;
             pendingRebind = null;
         }
+
+        // 退出和翻页拉开一倍间距：它是动作，不是导航。进度已随重生点自动存档。
+        if (IconButton(new Rect(x, y + (size + gap) * 2f + size + exitGap, size, size),
+                "Exit", false, true, out _))
+            QuitGame();
+    }
+
+    /// <summary>退出游戏。编辑器里顺便停止 Play，方便主流程验收。</summary>
+    public static void QuitGame()
+    {
+        Application.Quit();
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#endif
     }
 
     Rect At(Rect card, float x, float y, float w, float h)
@@ -1116,6 +1180,9 @@ public class LabSettingsUI : MonoBehaviour
 
     public static Texture2D Icon(string name, IconVariant variant)
     {
+        // 图标包里没有"退出"，用代码绘制的门 + 向外箭头，三种底色上都是浅色系。
+        if (name == "Exit") return ExitIcon;
+
         string path = IconResourceFolder + "/" + IconName(name, variant);
         if (iconCache.TryGetValue(path, out var cached) && cached != null) return cached;
 

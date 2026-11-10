@@ -435,6 +435,8 @@
 
 地图重置是**范围重置**：复活 / 进重生点 / 传送只恢复中心周围 `TuningLab.mapResetRadius` 格（默认 40，Inspector 可调）内的碎冰、碎岩浆和门；冰 / 岩浆按组完整恢复（组内任一块在范围内就整组恢复），完好的块不动。钥匙全局复生，避免"近处的门关了、远处的钥匙却没长回来"的死锁；幻影和临时钥匙一律全清。整条重置链只在确有块恢复时重建一次合并几何；范围内没有破坏时几乎零开销。无参 `ResetMap()` 仍是全图重置，供编辑器自检和测试使用。
 
+**自动存档**：重生点每次换点激活（踩点或双人死亡强制触发）就把「场景名 + 点位置」写进 `persistentDataPath/checkpoint.json`（`LabCheckpointStore`，临时文件替换 + 备份，与设置存档同一路数）；反复死在同一个点不重复写盘。主页第二个按钮「读取存档」进关后第一帧消费 `PendingContinue`，走 `ForceRespawn` 把整队以普通状态复活到存档点（清钥匙、范围重置）；没有存档或存档场景不在构建列表时按钮禁用。第一个按钮「开始游戏」在有存档时先弹覆盖确认（Esc / 取消可退），确认后删档再进关。主页第四个按钮和 ESC 设置页左侧栏底部的「门 + 箭头」图标都是退出游戏（编辑器里停止 Play）；退出图标是代码绘制的，不在 SettingsIcons 素材包里。
+
 两人都死亡后的结算统一推迟到本帧 `Update`，也就是所有 `FixedUpdate` 和物理接触回调都结束之后。死亡发生在碰撞 / 触发回调里，如果在回调中间立刻复活，同一物理步剩下的接触回调会再次打到刚复活的人（表现为“两人都死，只有一个人回到重生点，另一个死在重生点位置”）。不要为了省一帧把 `NotifyPlayerDied` 改回同步 `ForceRespawn`；重生规格 `LabRespawnPointTests.BothDeathsFromOverlappingSpikesInOneStepReviveTogether` 覆盖这条。
 
 关卡编辑器的“重生点”工具会把点写入 `LabLevelData`，预览和 Play 都由 `LabLevel.Build` 生成 3×3 触发器。点击同一格可删除，编辑器面板也支持逐个删除和清空；分区移动、删除和撤销会同步处理这些点。
@@ -454,6 +456,7 @@
 | `Assets/TuningLab/LabAudio.cs` | 16 个 Cue 的运行时音效播放器 |
 | `Assets/TuningLab/LabSettingsUI.cs` | 纯图标设置界面、Esc 暂停/恢复 |
 | `Assets/TuningLab/LabSettingsStore.cs` | 设置存档、备份与坏档恢复 |
+| `Assets/TuningLab/LabCheckpointStore.cs` | 重生点自动存档读写（checkpoint.json + 备份）与续玩点交接 |
 | `Assets/TuningLab/LabCamera.cs` | A/B 中点跟随和分区相机范围 |
 | `Assets/TuningLab/LabVerticalRope.cs` | 竖绳及其形状应用 |
 | `Assets/TuningLab/LabHorizontalRope.cs` | 横绳平台及其形状应用 |

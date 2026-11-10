@@ -20,12 +20,18 @@ public sealed class LabSpikeTests
     GameObject root;
     TuningLab lab;
     PhysicsMaterial2D slick;
+    string saveDir;
 
     [SetUp]
     public void SetUp()
     {
         Physics2D.gravity = new Vector2(0f, -9.81f);
         slick = new PhysicsMaterial2D("LabSlick") { friction = 0f, bounciness = 0f };
+        // 死亡强制触发重生点会自动存档：测试期间改写到临时目录。
+        saveDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            "hui-spike-" + System.Guid.NewGuid().ToString("N"));
+        LabCheckpointStore.DirectoryOverride = saveDir;
+        LabCheckpointStore.PendingContinue = null;
 
         labGo = new GameObject("Lab");
         labGo.SetActive(false);
@@ -43,6 +49,9 @@ public sealed class LabSpikeTests
         if (labGo != null) Object.Destroy(labGo);
         yield return null;
         yield return null;
+        LabCheckpointStore.DirectoryOverride = null;
+        LabCheckpointStore.PendingContinue = null;
+        if (System.IO.Directory.Exists(saveDir)) System.IO.Directory.Delete(saveDir, true);
     }
 
     // 几何 ---------------------------------------------------------------

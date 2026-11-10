@@ -1,4 +1,6 @@
+using System;
 using System.Collections;
+using System.IO;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -8,11 +10,16 @@ public sealed class LabRespawnPointTests
     GameObject labGo;
     TuningLab lab;
     Vector2 previousGravity;
+    string saveDir;
 
     [SetUp]
     public void SetUp()
     {
         previousGravity = Physics2D.gravity;
+        // 激活重生点会自动存档：测试期间改写到临时目录，不碰真实存档。
+        saveDir = Path.Combine(Path.GetTempPath(), "hui-respawn-" + Guid.NewGuid().ToString("N"));
+        LabCheckpointStore.DirectoryOverride = saveDir;
+        LabCheckpointStore.PendingContinue = null;
         labGo = new GameObject("RespawnPointLab");
         labGo.SetActive(false);
         lab = labGo.AddComponent<TuningLab>();
@@ -23,10 +30,13 @@ public sealed class LabRespawnPointTests
     [UnityTearDown]
     public IEnumerator TearDown()
     {
-        if (labGo != null) Object.Destroy(labGo);
+        if (labGo != null) UnityEngine.Object.Destroy(labGo);
         yield return null;
         yield return null;
         Physics2D.gravity = previousGravity;
+        LabCheckpointStore.DirectoryOverride = null;
+        LabCheckpointStore.PendingContinue = null;
+        if (Directory.Exists(saveDir)) Directory.Delete(saveDir, true);
     }
 
     [UnityTest]
@@ -46,6 +56,41 @@ public sealed class LabRespawnPointTests
         Assert.AreEqual(checkpointPosition.x + 1f, lab.PlayerB.transform.position.x, 0.001f,
             "B 应固定在重生点右侧 1 格");
         Assert.AreEqual(checkpointPosition.y, lab.PlayerB.transform.position.y, 0.001f);
+    }
+
+    [UnityTest]
+    public IEnumerator EnteringCheckpointWritesAutoSave()
+    {
+        var checkpointPosition = new Vector2(0f, 5f);
+        MakeCheckpoint(checkpointPosition);
+        yield return null;
+        MakeKinematic(lab.PlayerA, lab.PlayerB);
+        yield return Activate(checkpointPosition);
+
+        var data = LabCheckpointStore.Load();
+        Assert.IsNotNull(data, "踩进重生点应自动存档");
+        Assert.AreEqual(checkpointPosition.x, data.checkpoint.x, 0.001f);
+        Assert.AreEqual(checkpointPosition.y, data.checkpoint.y, 0.001f);
+        Assert.IsNotEmpty(data.scene);
+    }
+
+    [UnityTest]
+    public IEnumerator PendingContinueRevivesTeamAtSavedCheckpoint()
+    {
+        var checkpointPosition = new Vector2(0f, 5f);
+        var checkpoint = MakeCheckpoint(checkpointPosition);
+        yield return null;
+        MakeKinematic(lab.PlayerA, lab.PlayerB);
+
+        LabCheckpointStore.PendingContinue = checkpointPosition;
+        yield return null;
+
+        Assert.IsNull(LabCheckpointStore.PendingContinue, "续玩点只消费一次");
+        Assert.AreSame(checkpoint, lab.ActiveRespawnPoint);
+        Assert.AreEqual(checkpointPosition.x - 1f, lab.PlayerA.transform.position.x, 0.001f);
+        Assert.AreEqual(checkpointPosition.x + 1f, lab.PlayerB.transform.position.x, 0.001f);
+        AssertNormal(lab.PlayerA, "读档复活必须是普通状态");
+        AssertNormal(lab.PlayerB, "读档复活必须是普通状态");
     }
 
     [UnityTest]

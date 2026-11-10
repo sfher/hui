@@ -35,7 +35,8 @@ public sealed class HomeScreen : MonoBehaviour
     {
         NewGame,
         LoadGame,
-        Settings
+        Settings,
+        Quit
     }
 
     sealed class SnakeSegment
@@ -80,12 +81,14 @@ public sealed class HomeScreen : MonoBehaviour
     {
         "KeyBindings",
         "Resolution",
-        "Settings"
+        "Settings",
+        "Exit"
     };
 
     static readonly Color SnakeColor = new Color(0.36f, 0.89f, 1f, 1f);
     static readonly Color ButtonFill = new Color(0.015f, 0.025f, 0.035f, 0.88f);
     static readonly Color ButtonBorder = new Color(0.36f, 0.89f, 1f, 0.82f);
+    static readonly Color DisabledBorder = new Color(0.36f, 0.89f, 1f, 0.25f);
     static readonly Color HoverBorder = new Color(0.93f, 0.98f, 1f, 1f);
     static readonly Color ArtTint = new Color(1f, 1f, 1f, 0.72f);
 
@@ -93,14 +96,16 @@ public sealed class HomeScreen : MonoBehaviour
     readonly List<BorderSnake> borderSnakes = new List<BorderSnake>();
     readonly List<FloatingArt> floatingArt = new List<FloatingArt>();
     readonly List<PendingArt> pendingArt = new List<PendingArt>();
-    readonly Texture2D[] buttonIcons = new Texture2D[3];
-    readonly float[] hoverTimes = new float[3];
+    readonly Texture2D[] buttonIcons = new Texture2D[ButtonIconNames.Length];
+    readonly float[] hoverTimes = new float[ButtonIconNames.Length];
 
     LabSettingsUI settingsUI;
+    LabCheckpointStore.Data savedGame;
     System.Random random;
     Texture2D fallbackTexture;
     bool ready;
     bool navigating;
+    bool confirmingNewGame;
     int hoveredButton = -1;
     int lastScreenWidth;
     int lastScreenHeight;
@@ -110,13 +115,15 @@ public sealed class HomeScreen : MonoBehaviour
     float transitionElapsed;
 
     bool SettingsOpen => settingsUI != null && settingsUI.IsOpen;
-    bool MotionPaused => SettingsOpen || navigating;
+    bool MotionPaused => SettingsOpen || navigating || confirmingNewGame;
+    bool CanLoadGame => savedGame != null && Application.CanStreamedLevelBeLoaded(savedGame.scene);
 
     void Awake()
     {
         EnsureCamera();
         EnsureSettingsUI();
         LoadIcons();
+        savedGame = LabCheckpointStore.Load();
         random = new System.Random(Environment.TickCount ^ Guid.NewGuid().GetHashCode());
         RebuildBorderSnakes();
         ready = true;
@@ -136,6 +143,13 @@ public sealed class HomeScreen : MonoBehaviour
         if (Screen.width != lastScreenWidth || Screen.height != lastScreenHeight)
         {
             RebuildBorderSnakes();
+        }
+
+        // 覆盖确认弹窗打开时 Esc = 取消；设置组件已禁用，不会抢这个 Esc。
+        if (confirmingNewGame)
+        {
+            var keyboard = Keyboard.current;
+            if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame) CancelNewGameConfirm();
         }
 
         bool blocked = MotionPaused;
@@ -183,6 +197,7 @@ public sealed class HomeScreen : MonoBehaviour
             for (int i = 0; i < rects.Length; i++) DrawButton((HomeAction)i, rects[i]);
         }
 
+        if (confirmingNewGame) DrawNewGameConfirm();
         if (navigating) DrawCloseTransition();
     }
 
@@ -215,13 +230,14 @@ public sealed class HomeScreen : MonoBehaviour
 
     void DrawButton(HomeAction action, Rect baseRect)
     {
-        bool interactive = !SettingsOpen && !navigating;
-        bool hovered = interactive && hoveredButton == (int)action;
+        bool interactive = !SettingsOpen && !navigating && !confirmingNewGame;
+        bool actionEnabled = action != HomeAction.LoadGame || CanLoadGame;
+        bool hovered = interactive && actionEnabled && hoveredButton == (int)action;
         float breath = hovered ? HomeScreenSpec.ButtonBreathScale(hoverTimes[(int)action]) : 1f;
         Rect buttonRect = ScaleRect(baseRect, breath);
 
         DrawSolid(buttonRect, hovered ? new Color(0.025f, 0.045f, 0.06f, 0.96f) : ButtonFill);
-        DrawOutline(buttonRect, 2f, hovered ? HoverBorder : ButtonBorder);
+        DrawOutline(buttonRect, 2f, !actionEnabled ? DisabledBorder : hovered ? HoverBorder : ButtonBorder);
 
         Texture2D icon = buttonIcons[(int)action] != null ? buttonIcons[(int)action] : fallbackTexture;
         if (icon != null)
@@ -239,21 +255,23 @@ public sealed class HomeScreen : MonoBehaviour
                 float flip = HomeScreenSpec.IconFlipScale(hoverTimes[(int)action]);
                 GUIUtility.ScaleAroundPivot(new Vector2(flip, 1f), iconRect.center);
             }
-            GUI.color = hovered ? Color.white : new Color(0.88f, 0.94f, 0.96f, 1f);
+            GUI.color = hovered ? Color.white
+                : actionEnabled ? new Color(0.88f, 0.94f, 0.96f, 1f)
+                : new Color(0.88f, 0.94f, 0.96f, 0.3f);
             GUI.DrawTexture(iconRect, icon, ScaleMode.StretchToFill, true);
             GUI.color = oldColor;
             GUI.matrix = oldMatrix;
         }
 
         bool wasEnabled = GUI.enabled;
-        GUI.enabled = interactive;
+        GUI.enabled = interactive && actionEnabled;
         if (GUI.Button(baseRect, GUIContent.none, GUIStyle.none)) Activate(action);
         GUI.enabled = wasEnabled;
     }
 
     void Activate(HomeAction action)
     {
-        if (!HomeScreenSpec.CanStartNavigation(SettingsOpen, navigating)) return;
+        if (!HomeScreenSpec.CanStartNavigation(SettingsOpen, navigating) || confirmingNewGame) return;
 
         if (action == HomeAction.Settings)
         {
@@ -262,20 +280,58 @@ public sealed class HomeScreen : MonoBehaviour
             return;
         }
 
-        // 存档功能尚未实现；读取存档本轮精确等同于新游戏。
-        if (action == HomeAction.NewGame || action == HomeAction.LoadGame)
+        if (action == HomeAction.Quit)
         {
-            hoveredButton = -1;
-            if (!Application.CanStreamedLevelBeLoaded(LevelSceneName))
-            {
-                Debug.LogError($"HomeScreen: 构建场景列表中没有可加载的场景“{LevelSceneName}”。");
-                return;
-            }
-            StartCoroutine(CloseAndLoadLevel());
+            LabSettingsUI.QuitGame();
+            return;
         }
+
+        if (action == HomeAction.LoadGame)
+        {
+            if (!CanLoadGame) return;
+            hoveredButton = -1;
+            LabCheckpointStore.PendingContinue = savedGame.checkpoint;
+            StartCoroutine(CloseAndLoadLevel(savedGame.scene));
+            return;
+        }
+
+        // 新游戏：已有存档先弹覆盖确认，确认后才删档进关。
+        hoveredButton = -1;
+        if (savedGame != null)
+        {
+            confirmingNewGame = true;
+            if (settingsUI != null) settingsUI.enabled = false;
+            return;
+        }
+        StartNewGame();
     }
 
-    IEnumerator CloseAndLoadLevel()
+    void StartNewGame()
+    {
+        if (!Application.CanStreamedLevelBeLoaded(LevelSceneName))
+        {
+            Debug.LogError($"HomeScreen: 构建场景列表中没有可加载的场景“{LevelSceneName}”。");
+            return;
+        }
+        StartCoroutine(CloseAndLoadLevel(LevelSceneName));
+    }
+
+    void ConfirmNewGame()
+    {
+        confirmingNewGame = false;
+        if (settingsUI != null) settingsUI.enabled = true;
+        LabCheckpointStore.Delete();
+        savedGame = null;
+        StartNewGame();
+    }
+
+    void CancelNewGameConfirm()
+    {
+        confirmingNewGame = false;
+        if (settingsUI != null) settingsUI.enabled = true;
+    }
+
+    IEnumerator CloseAndLoadLevel(string sceneName)
     {
         if (!HomeScreenSpec.CanStartNavigation(SettingsOpen, navigating)) yield break;
 
@@ -291,16 +347,68 @@ public sealed class HomeScreen : MonoBehaviour
             yield return null;
         }
 
-        if (Application.CanStreamedLevelBeLoaded(LevelSceneName))
+        if (Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            SceneManager.LoadScene(LevelSceneName);
+            SceneManager.LoadScene(sceneName);
             yield break;
         }
 
-        Debug.LogError($"HomeScreen: 无法加载场景“{LevelSceneName}”。");
+        Debug.LogError($"HomeScreen: 无法加载场景“{sceneName}”。");
         navigating = false;
         if (settingsUI != null) settingsUI.enabled = true;
         transitionElapsed = 0f;
+    }
+
+    /// <summary>覆盖存档确认：深色面板 + 青色描边 + 像素字，和主页按钮同一套语言。</summary>
+    void DrawNewGameConfirm()
+    {
+        DrawSolid(new Rect(0f, 0f, Screen.width, Screen.height), new Color(0f, 0f, 0f, 0.62f));
+
+        float panelWidth = Mathf.Min(520f, Screen.width - 48f);
+        const float panelHeight = 232f;
+        var panel = new Rect(
+            Mathf.Round((Screen.width - panelWidth) * 0.5f),
+            Mathf.Round((Screen.height - panelHeight) * 0.5f),
+            panelWidth, panelHeight);
+        DrawSolid(panel, ButtonFill);
+        DrawOutline(panel, 2f, ButtonBorder);
+
+        var textStyle = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            wordWrap = true,
+            font = LabPixelFont.Font,
+            fontSize = LabPixelFont.SnapSize(LabPixelFont.UiSize),
+        };
+        textStyle.normal.textColor = HoverBorder;
+        GUI.Label(new Rect(panel.x + 24f, panel.y + 28f, panel.width - 48f, 96f),
+            "已有存档。\n开始新游戏将覆盖现有存档，是否继续？", textStyle);
+
+        const float buttonWidth = 168f;
+        const float buttonHeight = 48f;
+        const float gap = 32f;
+        float rowY = panel.yMax - 28f - buttonHeight;
+        var confirm = new Rect(panel.center.x - gap * 0.5f - buttonWidth, rowY, buttonWidth, buttonHeight);
+        var cancel = new Rect(panel.center.x + gap * 0.5f, rowY, buttonWidth, buttonHeight);
+        if (DrawDialogButton(confirm, "覆盖存档")) ConfirmNewGame();
+        if (DrawDialogButton(cancel, "取消")) CancelNewGameConfirm();
+    }
+
+    bool DrawDialogButton(Rect rect, string label)
+    {
+        bool hover = rect.Contains(Event.current.mousePosition);
+        DrawSolid(rect, hover ? new Color(0.025f, 0.045f, 0.06f, 0.96f) : ButtonFill);
+        DrawOutline(rect, 2f, hover ? HoverBorder : ButtonBorder);
+
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            font = LabPixelFont.Font,
+            fontSize = LabPixelFont.SnapSize(LabPixelFont.UiSize),
+        };
+        style.normal.textColor = hover ? Color.white : new Color(0.88f, 0.94f, 0.96f, 1f);
+        GUI.Label(rect, label, style);
+        return GUI.Button(rect, GUIContent.none, GUIStyle.none);
     }
 
     void DrawCloseTransition()
@@ -550,8 +658,9 @@ public sealed class HomeScreen : MonoBehaviour
 
     void LoadIcons()
     {
+        // 统一走 LabSettingsUI.Icon：带缓存，Exit 是代码绘制图，不在 Resources 里。
         for (int i = 0; i < ButtonIconNames.Length; i++)
-            buttonIcons[i] = Resources.Load<Texture2D>("SettingsIcons/" + ButtonIconNames[i]);
+            buttonIcons[i] = LabSettingsUI.Icon(ButtonIconNames[i]);
 
         var mapArt = Resources.LoadAll<Texture2D>("HuiArt");
         var uiArt = Resources.LoadAll<Texture2D>("SettingsIcons");
@@ -637,10 +746,11 @@ public sealed class HomeScreen : MonoBehaviour
     {
         float width = Screen.width;
         float height = Screen.height;
-        float rowWidth = HomeScreenSpec.ButtonSize * 3f + HomeScreenSpec.ButtonGap * 2f;
+        int count = ButtonIconNames.Length;
+        float rowWidth = HomeScreenSpec.ButtonSize * count + HomeScreenSpec.ButtonGap * (count - 1);
         float left = Mathf.Max(12f, (width - rowWidth) * 0.5f);
         float top = Mathf.Max(12f, (height - HomeScreenSpec.ButtonSize) * 0.5f);
-        var result = new Rect[3];
+        var result = new Rect[count];
         for (int i = 0; i < result.Length; i++)
         {
             result[i] = new Rect(
@@ -656,7 +766,11 @@ public sealed class HomeScreen : MonoBehaviour
     {
         Rect[] rects = ButtonRects();
         for (int i = 0; i < rects.Length; i++)
-            if (rects[i].Contains(pointer)) return i;
+        {
+            if (!rects[i].Contains(pointer)) continue;
+            if (i == (int)HomeAction.LoadGame && !CanLoadGame) continue;
+            return i;
+        }
         return -1;
     }
 

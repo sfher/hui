@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// 手感调试台。一个 GameObject 建出整个世界：地面、楼梯、两队方块、相机、HUD。
@@ -532,6 +533,7 @@ public class TuningLab : MonoBehaviour
 
     void Update()
     {
+        ConsumePendingContinue();
         if (Paused) return;
         ResolvePendingTeamDeath();
         if (deathFlashLeft > 0f) deathFlashLeft = Mathf.Max(0f, deathFlashLeft - Time.deltaTime);
@@ -585,6 +587,31 @@ public class TuningLab : MonoBehaviour
             respawnPoints.Add(point);
     }
 
+    /// <summary>
+    /// 主页“读取存档”进关后的第一帧：把队伍强制复活到存档重生点（普通状态、清钥匙、范围重置）。
+    /// 此时所有重生点的 Start 注册已完成；点找不到（关卡改过）就留在出生点并告警。
+    /// </summary>
+    void ConsumePendingContinue()
+    {
+        Vector2? pending = LabCheckpointStore.PendingContinue;
+        if (pending == null) return;
+        LabCheckpointStore.PendingContinue = null;
+
+        for (int i = respawnPoints.Count - 1; i >= 0; i--)
+            if (respawnPoints[i] == null) respawnPoints.RemoveAt(i);
+
+        for (int i = 0; i < respawnPoints.Count; i++)
+        {
+            LabRespawnPoint point = respawnPoints[i];
+            if (((Vector2)point.transform.position - pending.Value).sqrMagnitude > 1e-4f) continue;
+            ActivateRespawnPoint(point);
+            point.ForceRespawn(this);
+            return;
+        }
+
+        Debug.LogWarning($"TuningLab: 存档里的重生点 {pending.Value} 在当前场景不存在，队伍留在出生点。");
+    }
+
     public void ActivateRespawnPoint(LabRespawnPoint point)
     {
         if (point == null) return;
@@ -601,7 +628,11 @@ public class TuningLab : MonoBehaviour
 
         if (!respawnPoints.Contains(point))
             respawnPoints.Add(point);
+        bool newlyActivated = ActiveRespawnPoint != point;
         ActiveRespawnPoint = point;
+        // 激活即自动存档（踩点或双人死亡强制触发）；反复死在同一个点不重复写盘。
+        if (newlyActivated)
+            LabCheckpointStore.Save(SceneManager.GetActiveScene().name, point.transform.position);
     }
 
     /// <summary>
