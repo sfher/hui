@@ -174,10 +174,14 @@ public sealed class LabIce : MonoBehaviour
     /// <summary>整组恢复后只重建一次合并几何。</summary>
     public void RebuildCollision() => RebuildComposite();
 
-    void RebuildComposite()
-    {
-        if (composite != null) composite.GenerateGeometry();
-    }
+    /// <summary>
+    /// 把自己所在的合并几何标脏，帧末统一重建一次（#150）。
+    ///
+    /// composite 是 Manual 的，碎冰只关碰撞不重建；真正的 GenerateGeometry
+    /// 由 <see cref="LabCompositeRebuild"/> 在这一帧末尾合并执行，
+    /// 同一帧碎多少组冰都只算一次。
+    /// </summary>
+    void RebuildComposite() => LabCompositeRebuild.Enqueue(composite);
 
     /// <summary>
     /// 组色边框的贴图：<see cref="BorderPixels"/> 像素宽的边，中间完全透明。颜色由

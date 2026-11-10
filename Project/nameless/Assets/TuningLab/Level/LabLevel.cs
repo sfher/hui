@@ -270,8 +270,13 @@ public sealed class LabLevel : MonoBehaviour
         for (int i = 0; i < data.respawnPoints.Count; i++) { AddRespawnPoint(root, data.respawnPoints[i]); yield return null; }
         for (int i = 0; i < data.teleports.Count; i++) { AddTeleport(root, data.teleports[i]); yield return null; }
 
-        // 一次生成完整几何，随后恢复现有破冰/融化等操作的即时更新。
-        composite.generationType = CompositeCollider2D.GenerationType.Synchronous;
+        // 一次性生成完整几何。
+        //
+        // 这里**保持 Manual**，不要切回 Synchronous：Synchronous 下每次
+        // `body.enabled = false`（碎一块冰/一块岩浆）都会自动重建整张合并几何，
+        // 关卡上万个格子 + 八百多块冰，撞碎一组就是几十到上百毫秒的停顿（#150）。
+        // Manual 下由 LabIce/LabMagma 自己标脏、帧末统一重建一次。
+        composite.generationType = CompositeCollider2D.GenerationType.Manual;
         composite.GenerateGeometry();
     }
 

@@ -106,9 +106,14 @@ public sealed class LabMagma : MonoBehaviour
     /// <summary>整组恢复后只重建一次合并几何。</summary>
     public void RebuildCollision() => RebuildComposite();
 
+    /// <summary>
+    /// 标脏，帧末统一重建（#150）。
+    /// 和 LabIce 共用同一个重建器：一帧里碎冰又碎岩浆也只生成一次几何。
+    /// </summary>
     void RebuildComposite()
     {
-        if (composite != null) composite.GenerateGeometry();
+        if (composite == null) return;
+        LabCompositeRebuild.Enqueue(composite);
     }
 
     /// <summary>这个点落在哪一块未破坏的岩浆上；合并地形需要靠接触点找回是哪一格。</summary>
