@@ -152,7 +152,7 @@ public class TuningLab : MonoBehaviour
     public bool showPixelGrid = false;
 
     [Tooltip("Tab 键切换：相机视野内的整数格网格线。")]
-    public bool showGrid = true;
+    public bool showGrid = false;
 
     [Header("死亡反馈")]
     [Tooltip("任一玩家死亡时，屏幕闪一次红色边缘渐晕。")]
