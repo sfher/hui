@@ -418,6 +418,12 @@ public class TuningLab : MonoBehaviour
     [Tooltip("有 LabLevel 就按关卡数据搭场地；没有就用调试台内置房间。")]
     public LabLevel level;
 
+    [Tooltip("Play 时渐进搭建关卡：出生点附近同帧就绪，其余地形/物件分帧补全，避免大地图卡死激活帧。关掉则一次性同步搭建（编辑器预览与测试始终同步）。")]
+    public bool streamLevelBuild = true;
+
+    /// <summary>渐进搭建每帧的毫秒预算；越大补全越快但单帧越重。</summary>
+    const float StreamBuildBudgetMs = 4f;
+
     [Header("相机默认")]
     [Tooltip("默认相机最小正交尺寸（格，半高）。没有 LabLevel 时使用；有 LabLevel 时用关卡编辑器的相机跟随尺寸。")]
     public float defaultCameraMinSize = DefaultCameraMinSize;
@@ -431,6 +437,9 @@ public class TuningLab : MonoBehaviour
     void Awake()
     {
         if (level == null) level = GetComponent<LabLevel>();
+        // 关卡场景里序列化的 showGrid 仍是旧默认 1，加载时会盖掉字段默认值；
+        // 这里强制默认关网格（Tab / HUD 仍可运行时打开），不去逐场景改 .unity。
+        showGrid = false;
         if (autoBuild) BuildAll();
         // 已经烘焙好的旧关卡不会再跑 BuildAll；有 HUD 就说明是完整调试台/关卡，补挂设置界面。
         else if (GetComponent<LabHud>() != null) EnsureSettingsUI();
@@ -1151,7 +1160,11 @@ public class TuningLab : MonoBehaviour
         if (level != null)
         {
             // 关卡场景：几何完全来自 LabLevel，和编辑器预览走同一条生成路径。
-            level.BuildRuntime(transform, slick);
+            // Play 下渐进搭建：出生点附近同帧就绪，其余分帧补全，避免大地图一次性搭建卡死激活帧。
+            if (Application.isPlaying && streamLevelBuild)
+                level.StartCoroutine(level.BuildRuntimeStreaming(transform, slick, StreamBuildBudgetMs));
+            else
+                level.BuildRuntime(transform, slick);
             return;
         }
 

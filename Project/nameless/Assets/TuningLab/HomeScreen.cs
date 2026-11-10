@@ -113,6 +113,7 @@ public sealed class HomeScreen : MonoBehaviour
     float nextBatchAt;
     float nextSnakePairAt;
     float transitionElapsed;
+    bool transitionBlackout;
 
     bool SettingsOpen => settingsUI != null && settingsUI.IsOpen;
     bool MotionPaused => SettingsOpen || navigating || confirmingNewGame;
@@ -347,16 +348,24 @@ public sealed class HomeScreen : MonoBehaviour
             yield return null;
         }
 
-        if (Application.CanStreamedLevelBeLoaded(sceneName))
+        // 动画收束后先压一帧纯黑再加载：否则加载阻塞时屏幕会停在最后一帧的窄缝上。
+        // 加载期间纯黑 + Loading 省略号动画，等待不那么无趣。
+        transitionBlackout = true;
+        yield return null;
+
+        if (!Application.CanStreamedLevelBeLoaded(sceneName))
         {
-            SceneManager.LoadScene(sceneName);
+            Debug.LogError($"HomeScreen: 无法加载场景“{sceneName}”。");
+            navigating = false;
+            transitionBlackout = false;
+            if (settingsUI != null) settingsUI.enabled = true;
+            transitionElapsed = 0f;
             yield break;
         }
 
-        Debug.LogError($"HomeScreen: 无法加载场景“{sceneName}”。");
-        navigating = false;
-        if (settingsUI != null) settingsUI.enabled = true;
-        transitionElapsed = 0f;
+        // 点击时才异步加载（不做主页预载）：加载期间帧继续渲染，黑屏上的 Loading 动画能动。
+        AsyncOperation operation = SceneManager.LoadSceneAsync(sceneName, LoadSceneMode.Single);
+        while (!operation.isDone) yield return null;
     }
 
     /// <summary>覆盖存档确认：深色面板 + 青色描边 + 像素字，和主页按钮同一套语言。</summary>
@@ -415,6 +424,13 @@ public sealed class HomeScreen : MonoBehaviour
     {
         float width = Screen.width;
         float height = Screen.height;
+        if (transitionBlackout)
+        {
+            DrawSolid(new Rect(0f, 0f, width, height), Color.black);
+            DrawLoadingIndicator();
+            return;
+        }
+
         Rect aperture = HomeScreenSpec.TransitionAperture(transitionElapsed, width, height);
         if (aperture.width <= 0f || aperture.height <= 0f)
         {
@@ -427,6 +443,22 @@ public sealed class HomeScreen : MonoBehaviour
         DrawSolid(new Rect(0f, aperture.y, aperture.x, aperture.height), Color.black);
         DrawSolid(new Rect(aperture.xMax, aperture.y,
             width - aperture.xMax, aperture.height), Color.black);
+    }
+
+    /// <summary>黑屏加载期间的「Loading + 省略号」：省略号在 1~3 个点之间循环，像素字与确认框同一套。</summary>
+    void DrawLoadingIndicator()
+    {
+        int dots = 1 + (int)(Time.realtimeSinceStartup / 0.4f) % 3;
+        string text = "Loading" + new string('.', dots);
+
+        var style = new GUIStyle(GUI.skin.label)
+        {
+            alignment = TextAnchor.MiddleCenter,
+            font = LabPixelFont.Font,
+            fontSize = LabPixelFont.SnapSize(LabPixelFont.UiSize * 6),
+        };
+        style.normal.textColor = HoverBorder;
+        GUI.Label(new Rect(0f, Screen.height * 0.5f - 180f, Screen.width, 360f), text, style);
     }
 
     void DrawFloatingArt(FloatingArt art)

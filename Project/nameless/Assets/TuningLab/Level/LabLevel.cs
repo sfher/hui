@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -149,7 +150,12 @@ public sealed class LabLevel : MonoBehaviour
     {
         ClearGenerated();
         Build(parent, material, false);
+        SubscribeMapReset(parent);
+    }
 
+    /// <summary>登记地图重置链。同步搭建和流式搭建共用，保证复活/传送时的恢复行为一致。</summary>
+    void SubscribeMapReset(Transform parent)
+    {
         var lab = parent != null ? parent.GetComponentInParent<TuningLab>() : null;
         if (lab == null) return;
         resetLab = lab;
@@ -240,6 +246,38 @@ public sealed class LabLevel : MonoBehaviour
 
     void Build(Transform parent, PhysicsMaterial2D material, bool preview)
     {
+        Transform terrain = SetupGenerated(parent, material, preview, out _);
+        Transform root = generatedRoot;
+
+        var rects = data.MergedRects();
+        for (int i = 0; i < rects.Count; i++) AddSolid(terrain, rects[i], material);
+
+        for (int i = 0; i < data.ropes.Count; i++) AddRope(root, data.ropes[i], material);
+        for (int i = 0; i < data.keys.Count; i++) AddKey(root, data.keys[i], preview);
+        for (int i = 0; i < data.recalls.Count; i++) AddRecall(root, data.recalls[i], preview);
+        for (int i = 0; i < data.doors.Count; i++) AddDoor(root, data.doors[i], preview);
+        for (int i = 0; i < data.spikes.Count; i++) AddSpike(root, data.spikes[i]);
+        for (int i = 0; i < data.ices.Count; i++) AddIce(terrain, data.ices[i], material, preview);
+        for (int i = 0; i < data.magmas.Count; i++) AddMagma(terrain, data.magmas[i], material, preview);
+        for (int i = 0; i < data.hiddenBlocks.Count; i++) AddHiddenBlock(root, data.hiddenBlocks[i]);
+        for (int i = 0; i < data.repairBlocks.Count; i++)
+            AddRepairBlock(terrain, data.repairBlocks[i], material);
+        for (int i = 0; i < data.pixelArts.Count; i++)
+            AddPixelArt(root, data.pixelArts[i]);
+        for (int i = 0; i < data.respawnPoints.Count; i++)
+            AddRespawnPoint(root, data.respawnPoints[i]);
+        for (int i = 0; i < data.teleports.Count; i++)
+            AddTeleport(root, data.teleports[i]);
+    }
+
+    /// <summary>
+    /// 共享搭建头部：根节点 + 背景 + 地形合并场。同步 <see cref="Build"/> 和流式
+    /// <see cref="BuildRuntimeStreaming"/> 都走这里，保证两条路径的几何与物件完全一致。
+    /// 返回地形合并场的 Transform（实心/冰/岩浆/修复块挂它下面），根节点经 generatedRoot 取。
+    /// </summary>
+    Transform SetupGenerated(Transform parent, PhysicsMaterial2D material, bool preview,
+        out CompositeCollider2D composite)
+    {
         if (data == null) data = new LabLevelData();
 
         var root = new GameObject(GeneratedRootName);
@@ -259,9 +297,8 @@ public sealed class LabLevel : MonoBehaviour
             background.Load();
         }
 
-        // 地形、冰和岩浆共用一个合并碰撞体：相邻 1×1 方块（冰—冰、冰—地形、
-        // 岩浆—岩浆、岩浆—地形）的内侧竖面会在接缝处卡住横走的玩家，也会把
-        // 上表面滑行误判成侧面接触。
+        // 地形、冰和岩浆共用一个合并碰撞体：相邻 1×1 方块的内侧竖面会在接缝处卡住
+        // 横走的玩家，也会把上表面滑行误判成侧面接触。
         var fieldGo = new GameObject("TerrainField");
         fieldGo.transform.SetParent(root.transform, false);
         var fieldBody = fieldGo.AddComponent<Rigidbody2D>();
@@ -274,26 +311,91 @@ public sealed class LabLevel : MonoBehaviour
         fieldGo.AddComponent<LabTerrainField>();
         if (!preview) runtimeComposite = fieldComposite;
 
-        Transform terrain = fieldGo.transform;
-        var rects = data.MergedRects();
-        for (int i = 0; i < rects.Count; i++) AddSolid(terrain, rects[i], material);
+        composite = fieldComposite;
+        return fieldGo.transform;
+    }
 
-        for (int i = 0; i < data.ropes.Count; i++) AddRope(root.transform, data.ropes[i], material);
-        for (int i = 0; i < data.keys.Count; i++) AddKey(root.transform, data.keys[i], preview);
-        for (int i = 0; i < data.recalls.Count; i++) AddRecall(root.transform, data.recalls[i], preview);
-        for (int i = 0; i < data.doors.Count; i++) AddDoor(root.transform, data.doors[i], preview);
-        for (int i = 0; i < data.spikes.Count; i++) AddSpike(root.transform, data.spikes[i]);
-        for (int i = 0; i < data.ices.Count; i++) AddIce(terrain, data.ices[i], material, preview);
-        for (int i = 0; i < data.magmas.Count; i++) AddMagma(terrain, data.magmas[i], material, preview);
-        for (int i = 0; i < data.hiddenBlocks.Count; i++) AddHiddenBlock(root.transform, data.hiddenBlocks[i]);
-        for (int i = 0; i < data.repairBlocks.Count; i++)
-            AddRepairBlock(terrain, data.repairBlocks[i], material);
-        for (int i = 0; i < data.pixelArts.Count; i++)
-            AddPixelArt(root.transform, data.pixelArts[i]);
-        for (int i = 0; i < data.respawnPoints.Count; i++)
-            AddRespawnPoint(root.transform, data.respawnPoints[i]);
-        for (int i = 0; i < data.teleports.Count; i++)
-            AddTeleport(root.transform, data.teleports[i]);
+    /// <summary>
+    /// Play 下渐进搭建：大地图一次性搭建会卡死场景激活帧。首段在 StartCoroutine 首个 yield 前
+    /// 同步跑——离出生点最近的地形 + 全部重生点/传送点 + 一次 GenerateGeometry，玩家第一帧就有
+    /// 地面、读档续玩立刻能找到重生点。其余地形按每帧毫秒预算分帧补全，物件随后按数据原序分帧
+    /// （钥匙/门重置按索引对应 Data，顺序不能乱）。搭建期间合并体切 Manual，避免每加一个碰撞箱
+    /// 就同步重建（O(n²) 卡顿根源）；全部建完再 GenerateGeometry 一次并切回 Synchronous，运行时
+    /// 冰/岩浆/修复块的碰撞更新行为不变。仅 TuningLab 在 Play 下调用；测试与编辑器预览仍走同步路径。
+    /// </summary>
+    public IEnumerator BuildRuntimeStreaming(Transform parent, PhysicsMaterial2D material, float budgetMs)
+    {
+        ClearGenerated();
+        Transform terrain = SetupGenerated(parent, material, false, out var composite);
+        Transform root = generatedRoot;
+        composite.generationType = CompositeCollider2D.GenerationType.Manual;
+
+        float budget = Mathf.Max(0.5f, budgetMs);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+
+        // 离任一出生点最近的矩形优先，保证首段就把脚下地面建出来。
+        Vector2 spawnA = data.spawnA, spawnB = data.spawnB;
+        var rects = data.MergedRects();
+        rects.Sort((a, b) => SpawnDistance(a, spawnA, spawnB).CompareTo(SpawnDistance(b, spawnA, spawnB)));
+
+        int ri = 0;
+        while (ri < rects.Count && (ri == 0 || watch.ElapsedMilliseconds < budget))
+            AddSolid(terrain, rects[ri++], material);
+        for (int i = 0; i < data.respawnPoints.Count; i++) AddRespawnPoint(root, data.respawnPoints[i]);
+        for (int i = 0; i < data.teleports.Count; i++) AddTeleport(root, data.teleports[i]);
+        composite.GenerateGeometry();
+        yield return null;
+
+        // 其余地形分帧：每帧一批 + 重建一次几何，碰撞跟着搭建进度走，玩家走进新区域不会踩空。
+        while (ri < rects.Count)
+        {
+            watch.Restart();
+            int before = ri;
+            while (ri < rects.Count && (ri == before || watch.ElapsedMilliseconds < budget))
+                AddSolid(terrain, rects[ri++], material);
+            composite.GenerateGeometry();
+            yield return null;
+        }
+
+        // 物件按数据原序排成步骤列表分帧执行。冰/岩浆/修复块并入地形，碰到它们的帧末重建几何。
+        bool terrainDirty = false;
+        var steps = new List<System.Action>();
+        for (int i = 0; i < data.ropes.Count; i++) { int c = i; steps.Add(() => AddRope(root, data.ropes[c], material)); }
+        for (int i = 0; i < data.keys.Count; i++) { int c = i; steps.Add(() => AddKey(root, data.keys[c], false)); }
+        for (int i = 0; i < data.recalls.Count; i++) { int c = i; steps.Add(() => AddRecall(root, data.recalls[c], false)); }
+        for (int i = 0; i < data.doors.Count; i++) { int c = i; steps.Add(() => AddDoor(root, data.doors[c], false)); }
+        for (int i = 0; i < data.spikes.Count; i++) { int c = i; steps.Add(() => AddSpike(root, data.spikes[c])); }
+        for (int i = 0; i < data.ices.Count; i++) { int c = i; steps.Add(() => { AddIce(terrain, data.ices[c], material, false); terrainDirty = true; }); }
+        for (int i = 0; i < data.magmas.Count; i++) { int c = i; steps.Add(() => { AddMagma(terrain, data.magmas[c], material, false); terrainDirty = true; }); }
+        for (int i = 0; i < data.hiddenBlocks.Count; i++) { int c = i; steps.Add(() => AddHiddenBlock(root, data.hiddenBlocks[c])); }
+        for (int i = 0; i < data.repairBlocks.Count; i++) { int c = i; steps.Add(() => { AddRepairBlock(terrain, data.repairBlocks[c], material); terrainDirty = true; }); }
+        for (int i = 0; i < data.pixelArts.Count; i++) { int c = i; steps.Add(() => AddPixelArt(root, data.pixelArts[c])); }
+
+        int si = 0;
+        while (si < steps.Count)
+        {
+            watch.Restart();
+            terrainDirty = false;
+            int before = si;
+            while (si < steps.Count && (si == before || watch.ElapsedMilliseconds < budget))
+                steps[si++]();
+            if (terrainDirty) composite.GenerateGeometry();
+            yield return null;
+        }
+
+        composite.GenerateGeometry();
+        composite.generationType = CompositeCollider2D.GenerationType.Synchronous;
+        SubscribeMapReset(parent);
+    }
+
+    /// <summary>矩形中心到两个出生点的最近距离平方，用于"近处优先"排序。</summary>
+    static float SpawnDistance(RectInt rect, Vector2 a, Vector2 b)
+    {
+        float cx = rect.x + rect.width * 0.5f;
+        float cy = rect.y + rect.height * 0.5f;
+        float da = (cx - a.x) * (cx - a.x) + (cy - a.y) * (cy - a.y);
+        float db = (cx - b.x) * (cx - b.x) + (cy - b.y) * (cy - b.y);
+        return Mathf.Min(da, db);
     }
 
     void AddSolid(Transform parent, RectInt rect, PhysicsMaterial2D material)
