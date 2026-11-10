@@ -76,6 +76,8 @@ public static class LabPlayerBuild
         string outPath = ArgValue(Environment.GetCommandLineArgs(), "-labBuildOutput");
         if (string.IsNullOrEmpty(outPath))
             outPath = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Builds", targetName));
+        else
+            outPath = Path.GetFullPath(outPath);   // 传相对路径时按当前工作目录解析成绝对路径
 
         Directory.CreateDirectory(outPath);
 

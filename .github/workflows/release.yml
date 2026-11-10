@@ -88,8 +88,12 @@ jobs:
           targetPlatform: ${{ matrix.target }}
           customImage: unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-${{ matrix.image }}-3
           buildMethod: LabPlayerBuild.RunFromCi
-          # 把平台名传给 buildMethod，让脚本自己决定输出文件名
-          customParameters: -labBuildTarget ${{ matrix.target }}
+          # 让 builder 和 buildMethod 用同一个输出位置：
+          #   builder 把 build/ 收走，脚本必须写到它指定的地方，
+          #   否则 Package 步骤会对着空目录打包（之前就是这么失败的）。
+          buildsPath: build
+          buildName: Hui
+          customParameters: -labBuildTarget ${{ matrix.target }} -labBuildOutput ${{ github.workspace }}/build/${{ matrix.target }}
           allowDirtyBuild: true
 
       # 统一命名：Hui-<版本>-<系统>-<架构>.zip
@@ -101,6 +105,14 @@ jobs:
           SRC="build/${{ matrix.target }}"
           NAME="Hui-${VERSION}-${{ matrix.label }}.zip"
           echo "打包 $SRC -> $NAME"
+
+          if [ ! -d "$SRC" ] || [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
+            echo "::error::构建目录 $SRC 不存在或为空"
+            echo "--- build/ 下实际有什么 ---"
+            find build -maxdepth 2 2>/dev/null | head -30
+            exit 1
+          fi
+
           ls -la "$SRC"
           (cd "$SRC" && zip -r -q "$GITHUB_WORKSPACE/$NAME" .)
           ls -la "$GITHUB_WORKSPACE/$NAME"
