@@ -71,8 +71,22 @@ public sealed class LabTeleportPoint : MonoBehaviour
         if (!IsMarked) lab.MarkTeleportPoint(this);
         var kb = Keyboard.current;
         if (kb == null) return;
-        if (kb.leftShiftKey.wasPressedThisFrame || kb.periodKey.wasPressedThisFrame)
+
+        // 用绑定的"交互"键进选择，不再借用冲刺键（#152）：
+        // 原来读 LeftShift / 句号，玩家想冲刺一下就被拉进选择界面。
+        var bindings = lab.Bindings;
+        if (bindings == null) return;
+
+        if (ActionPressed(kb, bindings.For(true)[LabAction.Interact])
+            || ActionPressed(kb, bindings.For(false)[LabAction.Interact]))
             lab.EnterTeleportSelection(this);
+    }
+
+    static bool ActionPressed(Keyboard kb, Key key)
+    {
+        if (key == Key.None) return false;
+        var control = kb[key];
+        return control != null && control.wasPressedThisFrame;
     }
 
     /// <summary>灵体不算"人在里面"：一条边全碎 = 按一人死亡处理，凑不齐两人就不标记、不开选择。</summary>

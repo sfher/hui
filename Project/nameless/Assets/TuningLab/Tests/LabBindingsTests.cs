@@ -35,9 +35,64 @@ public sealed class LabBindingsTests
         Assert.AreEqual(Key.K, set[LabAction.Down]);
         Assert.AreEqual(Key.J, set[LabAction.Left]);
         Assert.AreEqual(Key.L, set[LabAction.Right]);
-        Assert.AreEqual(Key.B, set[LabAction.Jump]);
+        // Issue #152：小块跳跃从 B 改成 ' 键。
+        Assert.AreEqual(Key.Quote, set[LabAction.Jump], "小块跳跃默认是 ' 键");
         Assert.AreEqual(Key.Semicolon, set[LabAction.Dash]);
         Assert.AreEqual(Key.Enter, set[LabAction.Recall]);
+    }
+
+    // ---- 传送门交互键（Issue #152）-------------------------------------
+
+    [Test]
+    public void BothSidesHaveTeleportKeys()
+    {
+        var big = LabBindings.DefaultBig();
+        var small = LabBindings.DefaultSmall();
+
+        Assert.AreNotEqual(Key.None, big[LabAction.Interact], "大块要有交互键");
+        Assert.AreNotEqual(Key.None, big[LabAction.Cancel], "大块要有取消键");
+        Assert.AreNotEqual(Key.None, small[LabAction.Interact], "小块要有交互键");
+        Assert.AreNotEqual(Key.None, small[LabAction.Cancel], "小块要有取消键");
+    }
+
+    /// <summary>
+    /// 交互键不能和任何角色动作撞车。
+    /// 原来传送选择直接读 A / D —— 那正好是大块的左右移动，
+    /// 站在传送门里想走一步结果把光标移走了（#152 的原始现象）。
+    /// </summary>
+    [Test]
+    public void TeleportKeysDoNotCollideWithMovement()
+    {
+        foreach (var isBig in new[] { true, false })
+        {
+            var set = isBig ? LabBindings.DefaultBig() : LabBindings.DefaultSmall();
+            Key interact = set[LabAction.Interact];
+            Key cancel = set[LabAction.Cancel];
+
+            for (int a = 0; a <= (int)LabAction.Recall; a++)
+            {
+                Assert.AreNotEqual(set[(LabAction)a], interact,
+                    $"交互键 {interact} 不该和角色动作 {(LabAction)a} 重叠（{(isBig ? "大块" : "小块")}）");
+                Assert.AreNotEqual(set[(LabAction)a], cancel,
+                    $"取消键 {cancel} 不该和角色动作 {(LabAction)a} 重叠（{(isBig ? "大块" : "小块")}）");
+            }
+        }
+    }
+
+    [Test]
+    public void PunctuationKeysShowAsSymbols()
+    {
+        Assert.AreEqual("'", LabBindings.KeyName(Key.Quote), "引号键显示成 '，不是 Quote");
+        Assert.AreEqual(";", LabBindings.KeyName(Key.Semicolon));
+        Assert.AreEqual("/", LabBindings.KeyName(Key.Slash));
+    }
+
+    [Test]
+    public void ActionCountCoversAllActions()
+    {
+        Assert.AreEqual(System.Enum.GetValues(typeof(LabAction)).Length,
+            LabBindingSet.ActionCount,
+            "ActionCount 要和枚举项数一致，否则设置页会漏项");
     }
 
     [Test]
@@ -154,7 +209,7 @@ public sealed class LabBindingsTests
         Assert.AreEqual(Key.RightCtrl, restored.big[LabAction.Dash]);
         Assert.AreEqual(Key.LeftArrow, restored.small[LabAction.Recall]);
         // 没改过的保持默认。
-        Assert.AreEqual(Key.B, restored.small[LabAction.Jump]);
+        Assert.AreEqual(Key.Quote, restored.small[LabAction.Jump], "没改过的保持默认（#152 起是 ' 键）");
     }
 
     [Test]

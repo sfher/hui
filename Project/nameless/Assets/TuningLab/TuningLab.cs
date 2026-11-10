@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering.Universal;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 
 /// <summary>
@@ -969,15 +970,42 @@ public class TuningLab : MonoBehaviour
         if (!TeleportSelecting) return;
 
         if (!IsTeleportTargetValid())
+        {
             CancelTeleport();
-        else if (kb.escapeKey.wasPressedThisFrame)
+            return;
+        }
+
+        // 全部走绑定表，不再硬编码（#152）。
+        // 原来这里直接读 A / D —— 那正好是大块的左右移动键，
+        // 站在传送门里想走一步，结果把选择光标移走了。
+        // 现在：左右用各自的指向键，确认用交互键，取消用取消键，Esc 作为保底。
+        if (PressedIn(kb, true, LabAction.Cancel) || PressedIn(kb, false, LabAction.Cancel)
+            || kb.escapeKey.wasPressedThisFrame)
+        {
             CancelTeleport();
-        else if (kb.aKey.wasPressedThisFrame)
-            SelectTeleport(-1);
-        else if (kb.dKey.wasPressedThisFrame)
-            SelectTeleport(1);
-        else if (kb.enterKey.wasPressedThisFrame)
+            return;
+        }
+
+        if (PressedIn(kb, true, LabAction.Interact) || PressedIn(kb, false, LabAction.Interact))
+        {
             ConfirmTeleport();
+            return;
+        }
+
+        if (PressedIn(kb, true, LabAction.Left) || PressedIn(kb, false, LabAction.Left))
+            SelectTeleport(-1);
+        else if (PressedIn(kb, true, LabAction.Right) || PressedIn(kb, false, LabAction.Right))
+            SelectTeleport(1);
+    }
+
+    /// <summary>某个玩家的某个动作，这一帧是否按下。绑定表为空时返回 false。</summary>
+    bool PressedIn(UnityEngine.InputSystem.Keyboard kb, bool isBig, LabAction action)
+    {
+        if (Bindings == null) return false;
+        Key key = Bindings.For(isBig)[action];
+        if (key == Key.None) return false;
+        var control = kb[key];
+        return control != null && control.wasPressedThisFrame;
     }
 
     public void SelectTeleport(int delta)

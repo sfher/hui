@@ -3,7 +3,13 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-/// <summary>一个玩家的可重映射动作。</summary>
+/// <summary>
+/// 一个玩家的可重映射动作。
+///
+/// 前 7 个是移动/战斗类，由 <see cref="LabPlayer"/> 每帧读；
+/// 后 2 个是界面类（传送门选择），由 <see cref="TuningLab"/> 读。
+/// 分开是因为界面键不该跟着角色状态走，但在设置里要放在一起给人改。
+/// </summary>
 public enum LabAction
 {
     Up = 0,
@@ -13,6 +19,10 @@ public enum LabAction
     Jump = 4,
     Dash = 5,
     Recall = 6,
+    /// <summary>在传送门里按下 = 进入终点选择；选择中按下 = 确认。</summary>
+    Interact = 7,
+    /// <summary>取消传送选择 / 关掉选择界面。</summary>
+    Cancel = 8,
 }
 
 /// <summary>
@@ -24,7 +34,7 @@ public enum LabAction
 [Serializable]
 public sealed class LabBindingSet
 {
-    public const int ActionCount = 7;
+    public const int ActionCount = 9;
 
     /// <summary>每个动作一个键；顺序同 <see cref="LabAction"/>。</summary>
     public Key[] keys = new Key[ActionCount];
@@ -79,17 +89,26 @@ public sealed class LabBindings
 
     // ---- 默认值（Issue #94 定案）----
 
+    // 传送门交互键的默认值：**故意和角色动作错开**。
+    //
+    // 原来传送选择直接读硬编码的 A / D / Enter，而 A、D 正好是大块的左右移动键 ——
+    // 站在传送门里按 A 想走一步，结果把选择光标移走了（#152）。
+    // 现在单独给一对键，并把 Cancel 也纳入绑定，不再硬编码 Esc。
     public static LabBindingSet DefaultBig() => new LabBindingSet(
         Key.W, Key.S, Key.A, Key.D,        // 指向
         Key.Space,                          // 跳跃
         Key.LeftShift,                      // 冲刺
-        Key.LeftCtrl);                      // 召回
+        Key.LeftCtrl,                       // 召回
+        Key.E,                              // 传送门交互
+        Key.Q);                             // 取消
 
     public static LabBindingSet DefaultSmall() => new LabBindingSet(
         Key.I, Key.K, Key.J, Key.L,        // 指向
-        Key.B,                              // 跳跃
+        Key.Quote,                          // 跳跃（' 键，Issue #152 定案，原为 B）
         Key.Semicolon,                      // 冲刺（:/;）
-        Key.Enter);                         // 召回
+        Key.Enter,                          // 召回
+        Key.U,                              // 传送门交互
+        Key.Backspace);                     // 取消
 
     public LabBindings() { }
 
@@ -230,6 +249,18 @@ public sealed class LabBindings
 
             // ---- 具名键 ----
             case Key.Space: return "Space";
+            // 标点键按它印在键帽上的符号显示，比 Quote / Semicolon 这种英文名好认。
+            case Key.Quote: return "'";
+            case Key.Semicolon: return ";";
+            case Key.Comma: return ",";
+            case Key.Period: return ".";
+            case Key.Slash: return "/";
+            case Key.Backslash: return "\\";
+            case Key.LeftBracket: return "[";
+            case Key.RightBracket: return "]";
+            case Key.Minus: return "-";
+            case Key.Equals: return "=";
+            case Key.Backquote: return "`";
             case Key.Enter: return "Enter";
             case Key.Escape: return "Esc";
             case Key.Tab: return "Tab";
@@ -269,6 +300,8 @@ public sealed class LabBindings
             case LabAction.Jump: return "跳跃";
             case LabAction.Dash: return "冲刺";
             case LabAction.Recall: return "召回";
+            case LabAction.Interact: return "交互";
+            case LabAction.Cancel: return "取消";
             default: return action.ToString();
         }
     }

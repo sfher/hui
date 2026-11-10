@@ -218,7 +218,7 @@ public sealed class LabSettingsControlsPageTests
         yield return null;
 
         Assert.AreEqual(Key.Space, lab.Bindings.big[LabAction.Jump], "大块回默认");
-        Assert.AreEqual(Key.B, lab.Bindings.small[LabAction.Jump], "小块也回默认");
+        Assert.AreEqual(Key.Quote, lab.Bindings.small[LabAction.Jump], "小块也回默认（#152 起是 ' 键）");
     }
 
     [UnityTest]

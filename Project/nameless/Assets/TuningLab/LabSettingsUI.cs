@@ -26,7 +26,9 @@ public class LabSettingsUI : MonoBehaviour
     const float PageBtnMargin = 16f;
 
     const float CardW = 560f;
-    const float CardH = 432f;
+    // 卡片高度：操控页从 7 个动作加到 9 个，432 放不下（原来溢出 44px），
+    // 留到 540 让每行仍有 40px 行距。基本设置页内容少，多出来的空间不影响。
+    const float CardH = 540f;
     const float Pad = 16f;
     const float Chip = 40f;
     const float RowH = 48f;
@@ -488,15 +490,20 @@ public class LabSettingsUI : MonoBehaviour
         DrawSolid(At(card, x + 48f, y + 12f, w - 48f, 3f),
             isBig ? TuningLab.ColorA : TuningLab.ColorB);
 
-        y += 52f;
+        y += 46f;
 
-        // ---- 7 个动作 ----
+        // ---- 全部动作 ----
+        // 行距随动作数自适应：卡片高度固定 432，动作从 7 个加到 9 个之后
+        // 原样 40px 会溢出 44px，最后两行（交互 / 取消）被卡片底边切掉。
         var conflicted = bindings.ConflictedKeys();
+        const float available = CardH - 46f - 60f - RowStart;   // 扣掉栏头、底部提示、标题区
+        float step = Mathf.Min(40f, available / LabBindingSet.ActionCount);
+
         for (int a = 0; a < LabBindingSet.ActionCount; a++)
         {
             var action = (LabAction)a;
             DrawKeyRow(card, x, y, w, isBig, action, set[action], conflicted, bindings);
-            y += 40f;
+            y += step;
         }
     }
 
