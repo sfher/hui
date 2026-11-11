@@ -151,26 +151,64 @@ public static class LabSettingsStore
             // 原生全屏正常、非原生全屏全灭、所有窗口化正常），且 player
             // 合成的模式请求本身就是畸形的（跨显示器拼尺寸、0Hz）。
             // 改法：表面恒为原生，指针与 UI 始终在原生坐标系里，每个
-            // 档位的全屏都可操作。代价是全屏下所选档位暂不改变渲染
-            // 分辨率（渲染恒为原生）——渲染缩放的两条路线（动态分辨
-            // 率、URP renderScale）在本工程都实测不成立，另开 issue
-            // 跟踪，不在本修复内。
+            // 档位的全屏都可操作。所选档位改作世界渲染分辨率，由
+            // LabRenderScale 走游戏侧中间纹理缩放（#153）：主相机先
+            // 渲染到所选分辨率的纹理，再等比贴满原生表面；IMGUI 直
+            // 接画在后端缓冲上，不经纹理，始终原生清晰、命中不变。
+            // 管线侧的两条缩放路线（动态分辨率、URP renderScale）
+            // 在本工程都实测不成立，见 #153，不再走。
+            // 原生尺寸不能只问 mainWindowDisplayInfo 一处：双屏环境下
+            // 它实测会错位/拼接（2026-11-11：窗口在横屏主屏上，问到的
+            // 却是另一块竖屏的 1600×2560），须与 currentResolution
+            // 交叉核对，选法见 PickNativeSize，并打一行日志留证。
             var display = Screen.mainWindowDisplayInfo;
-            if (display.width > 0 && display.height > 0)
+            var current = Screen.currentResolution;
+            var native = PickNativeSize(display.width, display.height,
+                current.width, current.height, width, height);
+            Debug.Log($"[LabSettings] 全屏钉原生：窗口屏 {display.width}x{display.height}，currentResolution {current.width}x{current.height}，选定 {native.x}x{native.y}（档位 {width}x{height}）");
+            if (native.x > 0 && native.y > 0)
             {
-                if (Screen.width != display.width || Screen.height != display.height || !Screen.fullScreen)
-                    Screen.SetResolution(display.width, display.height, true);
+                if (Screen.width != native.x || Screen.height != native.y || !Screen.fullScreen)
+                    Screen.SetResolution(native.x, native.y, true);
+                LabRenderScale.SetTarget(width, height, native.x, native.y);
                 return;
             }
 
             // 拿不到原生尺寸时退回旧行为，不让全屏设置整体失效。
+            LabRenderScale.Disable();
             if (Screen.width != width || Screen.height != height || !Screen.fullScreen)
                 Screen.SetResolution(width, height, true);
             return;
         }
 
+        LabRenderScale.Disable();
         if (Screen.width != width || Screen.height != height || Screen.fullScreen)
             Screen.SetResolution(width, height, false);
+    }
+
+    /// <summary>
+    /// 全屏钉原生时选哪个尺寸作准。两处来源一致就用窗口屏的结果；
+    /// 不一致时选与所选档位横竖方向一致的那个（本作档位全是横屏，
+    /// 问到竖屏尺寸即是错位）；方向也分不出时保持窗口屏的结果。
+    /// 任一来源无效（≤0）时用另一个；都无效返回 (0,0)，调用方走兜底。
+    /// </summary>
+    public static Vector2Int PickNativeSize(
+        int windowWidth, int windowHeight,
+        int currentWidth, int currentHeight,
+        int selectedWidth, int selectedHeight)
+    {
+        bool windowValid = windowWidth > 0 && windowHeight > 0;
+        bool currentValid = currentWidth > 0 && currentHeight > 0;
+        if (!windowValid) return new Vector2Int(currentWidth, currentHeight);
+        if (!currentValid || (windowWidth == currentWidth && windowHeight == currentHeight))
+            return new Vector2Int(windowWidth, windowHeight);
+
+        bool wantLandscape = selectedWidth >= selectedHeight;
+        bool windowLandscape = windowWidth >= windowHeight;
+        bool currentLandscape = currentWidth >= currentHeight;
+        if (windowLandscape != wantLandscape && currentLandscape == wantLandscape)
+            return new Vector2Int(currentWidth, currentHeight);
+        return new Vector2Int(windowWidth, windowHeight);
     }
 
     /// <summary>缺字段、越界值和损坏文件都在这里收口，调用方不必再判。</summary>

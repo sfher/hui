@@ -220,6 +220,42 @@ public sealed class LabSettingsTests
         Assert.AreEqual(0.6f, Time.timeScale, 1e-4f);
     }
 
+    [Test]
+    public void PickNativeSize_AgreeingSourcesKeepWindowDisplay()
+    {
+        var picked = LabSettingsStore.PickNativeSize(3840, 2160, 3840, 2160, 800, 480);
+        Assert.AreEqual(new Vector2Int(3840, 2160), picked);
+    }
+
+    [Test]
+    public void PickNativeSize_PortraitWindowDisplayFallsToCurrentResolution()
+    {
+        // 2026-11-11 实测事故值：窗口在横屏主屏，窗口屏问到的是竖屏尺寸
+        var picked = LabSettingsStore.PickNativeSize(1600, 2560, 3840, 2160, 800, 480);
+        Assert.AreEqual(new Vector2Int(3840, 2160), picked);
+    }
+
+    [Test]
+    public void PickNativeSize_BothLandscapeDisagreementKeepsWindowDisplay()
+    {
+        var picked = LabSettingsStore.PickNativeSize(2560, 1440, 3840, 2160, 800, 480);
+        Assert.AreEqual(new Vector2Int(2560, 1440), picked);
+    }
+
+    [Test]
+    public void PickNativeSize_InvalidCurrentKeepsWindowDisplay()
+    {
+        var picked = LabSettingsStore.PickNativeSize(1920, 1080, 0, 0, 800, 480);
+        Assert.AreEqual(new Vector2Int(1920, 1080), picked);
+    }
+
+    [Test]
+    public void PickNativeSize_InvalidWindowUsesCurrent()
+    {
+        var picked = LabSettingsStore.PickNativeSize(0, 0, 3840, 2160, 800, 480);
+        Assert.AreEqual(new Vector2Int(3840, 2160), picked);
+    }
+
     TuningLab MakeLab()
     {
         labGo = new GameObject("SettingsLab");
