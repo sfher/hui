@@ -273,6 +273,7 @@ public class TuningLab : MonoBehaviour
 
     readonly List<LabTeleportPoint> teleports = new List<LabTeleportPoint>();
     readonly List<LabTeleportPoint> teleportTargets = new List<LabTeleportPoint>();
+    GUIStyle teleportLabelStyle;
     LabTeleportPoint teleportSource;
     LabTeleportAnimation teleportAnimation;
     Coroutine teleportRoutine;
@@ -1203,7 +1204,13 @@ public class TuningLab : MonoBehaviour
         GUI.color = Color.white;
         string label = string.Format("传送门 {0}/{1}   A/D 选择   Enter 确认",
             teleportSelectionIndex + 1, teleportTargets.Count);
-        GUI.Label(new Rect(24f, 24f, 500f, 32f), label);
+        if (teleportLabelStyle == null)
+        {
+            teleportLabelStyle = new GUIStyle(GUI.skin.label) { fontSize = 16 };
+            var font = LabUiFont.Get();
+            if (font != null) teleportLabelStyle.font = font;
+        }
+        GUI.Label(new Rect(24f, 24f, 500f, 32f), label, teleportLabelStyle);
         GUI.color = previous;
     }
 

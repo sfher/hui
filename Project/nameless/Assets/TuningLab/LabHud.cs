@@ -95,9 +95,7 @@ public class LabHud : MonoBehaviour
         if (stylesReady) return;
         stylesReady = true;
 
-        // Unity 自带的 GUI 字体没有中文字形，这里直接拿系统字体。
-        cjkFont = Font.CreateDynamicFontFromOSFont(
-            new[] { "Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "SimSun", "Arial" }, 14);
+        cjkFont = LabUiFont.Get();
 
         label = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = false };
         small = new GUIStyle(GUI.skin.label) { fontSize = 11, wordWrap = false };
