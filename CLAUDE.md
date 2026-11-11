@@ -57,4 +57,6 @@ git diff Project/nameless/ProjectSettings/EditorBuildSettings.asset
 
 ## 变更流程
 
-从最新 `main` 创建 `feat/`、`fix/`、`refactor/` 或 `docs/` 分支，不直接修改 `main`；保持变更最小并通过 PR 合入。
+从最新 `main` 创建 `feat/`、`fix/`、`refactor/`、`docs/` 或 `ci/` 分支，不直接修改 `main`；保持变更最小并通过 PR 合入。
+
+完整工程约定见 **[docs/development-guidelines.md](docs/development-guidelines.md)**（硬约束、分支规范、代码陷阱、验证要求、PR 清单）。
