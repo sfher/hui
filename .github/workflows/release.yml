@@ -56,11 +56,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - label: windows-x64
-            target: StandaloneWindows64
-            # 必须用 windows-mono：base 镜像不含 Windows 平台支持，
-            # 用它构建会报 "Error building player because build target was unsupported"。
-            image: windows-mono
+          # Windows 暂时不在 CI 里构建。
+          #
+          # GitHub 托管 runner 上它的 Unity 容器会稳定被 OOM killer 杀掉
+          # （exit 137，停在加载 WindowsStandaloneSupport 之后 0.6 秒）。
+          # 试过换镜像 / 限内存 / 限 CPU / 跑双份，全部无效 —— 依据
+          # game-ci/unity-builder#540：限制容器内存只会让 OOM 更早发生。
+          # Windows 包改为本地用 GameJam → Build Players → Windows 出。
           - label: macos-x64
             target: StandaloneOSX
             # mac-mono 是唯一的 macOS 镜像。
@@ -184,7 +186,8 @@ jobs:
         run: |
           set -euo pipefail
           missing=0
-          for p in windows-x64 macos-x64 linux-x64; do
+          # 目前 CI 只构建 macOS 和 Linux（Windows 见 matrix 里的说明）。
+          for p in macos-x64 linux-x64; do
             if ls artifacts/*-"$p".zip >/dev/null 2>&1; then
               echo "OK   $p: $(ls artifacts/*-"$p".zip | head -1)"
             else
