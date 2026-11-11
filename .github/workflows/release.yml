@@ -106,6 +106,14 @@ jobs:
           # 无头构建不需要 GPU；开着会额外占显存和驱动内存，
           # 在只剩 1GB shm 的容器里更容易触发 OOM。
           enableGpu: false
+          # 显式给容器定内存和 CPU。
+          #
+          # 默认值是"宿主机内存的 95%"——runner 内存有波动时容器的上限也跟着变，
+          # 显式写死避免这个不确定性（16GB runner 上 95% ≈ 15.2GB，和日志里
+          # --memory=15183m 吻合）。留 ~2GB 给宿主机和 docker 本身。
+          dockerMemoryLimit: 14g
+          # 限制容器 CPU，顺带压住 Unity 内部并行导入/编译的进程数。
+          dockerCpuLimit: 4
           # 让 builder 和 buildMethod 用同一个输出位置：
           #   builder 把 build/ 收走，脚本必须写到它指定的地方，
           #   否则 Package 步骤会对着空目录打包（之前就是这么失败的）。
@@ -146,6 +154,17 @@ jobs:
           (cd "$SRC" && zip -r -q "$GITHUB_WORKSPACE/$NAME" .)
           ls -la "$GITHUB_WORKSPACE/$NAME"
           echo "ASSET=$NAME" >> "$GITHUB_ENV"
+
+      # 构建日志无论成败都传上来。137/OOM 这类失败在 Unity 日志里
+      # 只能看到"进程被打断"，但能确认停在哪一步（导入？着色器？打包？）。
+      - name: Upload Unity log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-log-${{ matrix.label }}
+          path: ${{ env.PROJECT_PATH }}/Logs
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
