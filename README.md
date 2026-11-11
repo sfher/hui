@@ -17,7 +17,6 @@ Unity **6000.6.4f1** · URP 2D · Input System · 全部 x64
 - [关卡制作](#关卡制作)
 - [验证体系](#验证体系)
 - [构建与发布](#构建与发布)
-- [开发约定](#开发约定)
 - [文档索引](#文档索引)
 - [制作者](#制作者)
 - [许可](#许可)
@@ -168,6 +167,8 @@ Project/nameless/
 2. **可编辑的关卡内容进 `LabLevelData`** —— 不要手改生成的碰撞体，它们在 Play 时重建。
 3. **编辑器预览和 Play 共用 `LabLevel.Build`** —— 保证"看到的"和"撞到的"是同一份几何。
 
+> 完整的开发流程、分支规范、提交要求、验证标准和 PR review 清单见 **[开发准则](docs/development-guidelines.md)**。
+>
 > 工程目录仍叫 `Project/nameless/`。仓库名叫 Hui，但改目录名会破坏所有 Unity 引用，不值得。
 
 ---
@@ -287,39 +288,13 @@ Unity -batchmode -quit -projectPath Project/nameless \
 
 ---
 
-## 开发约定
-
-### 分支与提交
-
-- **不直接在 `main` 上开发**，从 `main` 建 `feat/` `fix/` `refactor/` `docs/` 分支
-- 通过 PR 合入，保持变更范围最小
-- 提交信息说明实际变更，不要编造验证结果
-- **不加 AI 署名水印，不加 `Co-Authored-By`**
-
-### 资源
-
-- 每个资源文件提交对应 `.meta`
-- 文本资源用 LF
-- 像素图导入：Point 过滤、无压缩、关闭 Mipmap
-
-### ProjectSettings
-
-Unity 打开工程会重写 `ProjectSettings/`。提交前先看：
-
-```bash
-git status --short
-git diff --stat Project/nameless/ProjectSettings/
-```
-
-只有 `serializedVersion`、字段顺序、默认值变化属于序列化噪音，可以丢弃；真实的场景列表、图层、物理、输入和渲染设置变化必须审查后提交。
-
-### 不提交的东西
-
-`Library/` `Temp/` `Logs/` `UserSettings/` `*.csproj` `*.slnx` `Builds/`
-
----
-
 ## 文档索引
+
+### 先读这个
+
+| 文档 | 内容 |
+| --- | --- |
+| [**开发准则**](docs/development-guidelines.md) | 硬约束、分支规范、代码要求、验证标准、PR 清单 |
 
 ### 开发基准（代码有疑问优先看这里）
 

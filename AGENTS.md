@@ -14,8 +14,10 @@
 
 ## 开发流程
 
+完整工程约定见 **[docs/development-guidelines.md](docs/development-guidelines.md)**（人看的版本，内容与本文一致）。这里是摘要：
+
 1. 不要直接在默认分支 `main` 上开发。
-2. 从 `main` 创建目的明确的功能分支：`feat/`、`fix/`、`refactor/` 或 `docs/`。
+2. 从 `main` 创建目的明确的功能分支：`feat/`、`fix/`、`refactor/`、`docs/` 或 `ci/`。
 3. 修改提交到分支并通过 Pull Request 合入 `main`。
 4. 提交信息简洁明确，说明实际变更。
 
