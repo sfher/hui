@@ -49,41 +49,26 @@ jobs:
           echo "版本号：$V"
 
   build:
-    name: Build ${{ matrix.label }} (${{ matrix.attempt }})
+    name: Build ${{ matrix.label }}
     needs: setup
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Windows 跑两份：这个平台在 GitHub 托管 runner 上的 OOM 成功率
-          # 只有一半（最近 4 次 2 成功 2 失败），而且失败是 Unity 容器被
-          # OOM killer 直接 SIGKILL，没法靠配置规避 —— 参见 game-ci/unity-builder#540，
-          # 维护者明确说"限制容器内存只会让它更早崩"。
-          # 两份独立 runner 并行跑，只要有一份成功就能出包。
           - label: windows-x64
             target: StandaloneWindows64
+            # 必须用 windows-mono：base 镜像不含 Windows 平台支持，
+            # 用它构建会报 "Error building player because build target was unsupported"。
             image: windows-mono
-            attempt: a
-          - label: windows-x64
-            target: StandaloneWindows64
-            image: windows-mono
-            attempt: b
           - label: macos-x64
-            attempt: a
             target: StandaloneOSX
-            # mac-mono 是唯一的 macOS 镜像，没有轻量替代。
-            # 最近 4 次里 3 次成功 1 次 OOM（exit 137，停在
-            # "Register platform support module: MacStandaloneSupport" 之后 0.6 秒），
-            # 属于容器内存抖动，偶发。失败时用 gh run rerun --failed 重跑即可。
+            # mac-mono 是唯一的 macOS 镜像。
             image: mac-mono
           - label: linux-x64
-            attempt: a
             target: StandaloneLinux64
-            # 不用 linux-il2cpp 镜像：那个镜像体积大、加载 LinuxStandaloneSupport
-            # 时稳定 OOM（进程在 Registered in 0.002s 之后 0.6 秒被 Killed，
-            # 重跑两次都一样，不是抖动）。项目本身用的是 Mono 后端，
-            # base 镜像内置 Linux 平台支持，够用且轻。
+            # linux-il2cpp 镜像加载 LinuxStandaloneSupport 时稳定 OOM，
+            # base 内置 Linux 平台支持且更轻。项目本身是 Mono 后端。
             image: base
 
     steps:
@@ -112,15 +97,6 @@ jobs:
           targetPlatform: ${{ matrix.target }}
           customImage: unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-${{ matrix.image }}-3
           buildMethod: LabPlayerBuild.RunFromCi
-          # 无头构建不需要 GPU；开着会额外占显存和驱动内存，
-          # 在只剩 1GB shm 的容器里更容易触发 OOM。
-          enableGpu: false
-          # 不设 dockerMemoryLimit / dockerCpuLimit。
-          #
-          # 试过写 14g + cpu 4，结果 Windows 从"能成功"变成稳定 137：
-          # 默认值是宿主机内存的 95%（16GB → 15.2GB），写 14g 等于主动砍掉 1.2GB；
-          # 再限 CPU 会让编译队列积压，内存峰值反而更高。
-          # 保留默认（15.2GB）是和历史上成功那次一致的配置。
           # 让 builder 和 buildMethod 用同一个输出位置：
           #   builder 把 build/ 收走，脚本必须写到它指定的地方，
           #   否则 Package 步骤会对着空目录打包（之前就是这么失败的）。
@@ -176,7 +152,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.label }}-${{ matrix.attempt }}
+          name: ${{ matrix.label }}
           path: ${{ env.ASSET }}
           if-no-files-found: error
 
@@ -187,11 +163,8 @@ jobs:
     #   1. 推 tag  → 无条件发版（tag 本身就是"要发版"的信号）
     #   2. 手动触发 → 只有 dry_run 明确为 false 才发
     # 分开写，避免 tag 触发时去读一个不存在的 inputs.dry_run。
-    # build 是矩阵 job：Windows 现在跑两份（一份成功一份 OOM 失败也算 build 整体 failure）。
-    # 所以不能只看 needs.build.result，改成"确实有产物"才发版 —— 具体校验在下面的
-    # Verify 步骤里做，缺任何一个平台的包就让 Release 失败，不发出残缺版本。
     if: >-
-      always() && !cancelled() &&
+      always() && needs.build.result == 'success' &&
       (github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == false))
     runs-on: ubuntu-latest
     permissions:
