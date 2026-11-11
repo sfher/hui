@@ -58,13 +58,16 @@ jobs:
         include:
           - label: windows-x64
             target: StandaloneWindows64
-            # 不用 windows-mono：和 linux-il2cpp 一个毛病，镜像重、
-            # 加载 WindowsStandaloneSupport 之后 0.6 秒被 OOM killer 杀掉
-            # （Register platform support module → Killed，exit 137）。
-            # 项目是 Mono 后端，base 镜像内置 Windows 平台支持（Linux 已验证可行）。
-            image: base
+            # 必须是 windows-mono：base 镜像不含 Windows 平台支持，
+            # 用它构建会报 "Error building player because build target was unsupported"
+            # （上一版换成 base 就是这么坏掉的，exit 1）。
+            image: windows-mono
           - label: macos-x64
             target: StandaloneOSX
+            # mac-mono 是唯一的 macOS 镜像，没有轻量替代。
+            # 最近 4 次里 3 次成功 1 次 OOM（exit 137，停在
+            # "Register platform support module: MacStandaloneSupport" 之后 0.6 秒），
+            # 属于容器内存抖动，偶发。失败时用 gh run rerun --failed 重跑即可。
             image: mac-mono
           - label: linux-x64
             target: StandaloneLinux64
@@ -100,6 +103,9 @@ jobs:
           targetPlatform: ${{ matrix.target }}
           customImage: unityci/editor:ubuntu-${{ env.UNITY_VERSION }}-${{ matrix.image }}-3
           buildMethod: LabPlayerBuild.RunFromCi
+          # 无头构建不需要 GPU；开着会额外占显存和驱动内存，
+          # 在只剩 1GB shm 的容器里更容易触发 OOM。
+          enableGpu: false
           # 让 builder 和 buildMethod 用同一个输出位置：
           #   builder 把 build/ 收走，脚本必须写到它指定的地方，
           #   否则 Package 步骤会对着空目录打包（之前就是这么失败的）。
