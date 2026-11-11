@@ -306,21 +306,17 @@ public class LabSettingsUI : MonoBehaviour
 
         int maxWidth = Display.main.systemWidth;
         int maxHeight = Display.main.systemHeight;
-        var seen = new HashSet<long>();
-
-        foreach (var r in Screen.resolutions)
+        // 与 Apply 钉原生同理：主显示器信息在双屏下实测会错指到竖屏
+        // （2026-11-11），问到的原生是竖屏而当前分辨率是横屏时以当前
+        // 分辨率为准，否则整张档位表都会按错比例生成。
+        var currentMode = Screen.currentResolution;
+        if (maxWidth <= maxHeight && currentMode.width > currentMode.height)
         {
-            if (r.width < 800 || r.height < 450) continue;
-            if (maxWidth > 0 && r.width > maxWidth + 1) continue;
-            if (maxHeight > 0 && r.height > maxHeight + 1) continue;
-
-            float aspect = r.width / (float)r.height;
-            if (aspect < 1.2f || aspect > 2.1f) continue;
-
-            long key = ((long)r.width << 32) | (uint)r.height;
-            if (seen.Add(key)) resolutions.Add(new Vector2Int(r.width, r.height));
+            maxWidth = currentMode.width;
+            maxHeight = currentMode.height;
         }
 
+        resolutions.AddRange(GenerateResolutions(maxWidth, maxHeight));
         if (resolutions.Count == 0) AddFallbackResolutions(maxWidth, maxHeight);
 
         resolutions.Sort((a, b) => a.x != b.x ? a.x.CompareTo(b.x) : a.y.CompareTo(b.y));
@@ -337,6 +333,32 @@ public class LabSettingsUI : MonoBehaviour
 
         resolutionIndex = resolutions.IndexOf(current);
         if (resolutionIndex < 0) resolutionIndex = FindResolutionIndex(current.x, current.y);
+    }
+
+    /// <summary>
+    /// 档位表从原生分辨率按固定比例缩放生成，全部与原生同宽高比。
+    /// 不再采信 Screen.resolutions 系统模式表：双屏/X11 下它混入大量
+    /// 异比例模式（2026-11-11 实测抽出的 6 档里 4 档是 4:3），抽样
+    /// 后整张表与显示器比例脱节。尺寸取偶数，下限沿用旧过滤的
+    /// 800×450；原生尺寸拿不到（≤0）时返回空表，调用方走兜底梯子。
+    /// </summary>
+    public static List<Vector2Int> GenerateResolutions(int nativeWidth, int nativeHeight)
+    {
+        var result = new List<Vector2Int>();
+        if (nativeWidth <= 0 || nativeHeight <= 0) return result;
+
+        float[] scales = { 1f, 0.85f, 0.75f, 2f / 3f, 0.5f, 0.4f, 1f / 3f, 0.25f };
+        var seen = new HashSet<long>();
+        foreach (var scale in scales)
+        {
+            int width = Mathf.RoundToInt(nativeWidth * scale / 2f) * 2;
+            int height = Mathf.RoundToInt(nativeHeight * scale / 2f) * 2;
+            if (width < 800 || height < 450) continue;
+
+            long key = ((long)width << 32) | (uint)height;
+            if (seen.Add(key)) result.Add(new Vector2Int(width, height));
+        }
+        return result;
     }
 
     void AddFallbackResolutions(int maxWidth, int maxHeight)
